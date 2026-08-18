@@ -39,7 +39,7 @@ if not TOKEN or TOKEN == "BOT-TOKEN":
     TOKEN = "8738964867:AAFMmnj0fzJt_uAq3cf-LbfWgsrhnrDcQ8A"
 
 # Optional: API Configuration
-API_BASE_URL = os.getenv('JWT_API_URL', 'https://ff-jwt-gen-api.lovable.app/api/public/token?')
+API_BASE_URL = os.getenv('JWT_API_URL', 'https://frexy-jwt-gen.vercel.app/token?')
 API_KEY = os.getenv('JWT_API_KEY', '')
 API_TEST_UID = os.getenv('API_TEST_UID', 'test_user')
 API_TEST_PASSWORD = os.getenv('API_TEST_PASSWORD', 'test_pass')
