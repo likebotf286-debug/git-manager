@@ -36,25 +36,25 @@ load_dotenv()
 # Essential: Get Bot Token
 TOKEN = os.getenv('BOT-TOKEN')
 if not TOKEN or TOKEN == "BOT-TOKEN":
-    TOKEN = "8904895891:AAEh5tF5fHLQyrMT1hYngUwl4Gsi3YqxFX8"
+    TOKEN = "8738964867:AAFMmnj0fzJt_uAq3cf-LbfWgsrhnrDcQ8A"
 
 # Optional: API Configuration
 API_BASE_URL = os.getenv('JWT_API_URL', 'https://ff-jwt-gen-api.lovable.app/api/public/token?')
-API_KEY = os.getenv('JWT_API_KEY', 'star')
+API_KEY = os.getenv('JWT_API_KEY', '')
 API_TEST_UID = os.getenv('API_TEST_UID', 'test_user')
 API_TEST_PASSWORD = os.getenv('API_TEST_PASSWORD', 'test_pass')
 
 # Optional: Bot Settings
 MAX_FILE_SIZE = int(os.getenv('MAX_FILE_SIZE', 5 * 1024 * 1024))
-ADMIN_ID = int(os.getenv('ADMIN_ID', 8669516794))
+ADMIN_ID = int(os.getenv('ADMIN_ID', 6417430059))
 MAX_CONCURRENT_REQUESTS = int(os.getenv('MAX_CONCURRENT_REQUESTS', 1))
-ADMIN_CONTACT_LINK = os.getenv('ADMIN_CONTACT_LINK', 'https://t.me/ATC_MOBIN')
+ADMIN_CONTACT_LINK = os.getenv('ADMIN_CONTACT_LINK', 'https://Frexy1only')
 AUTO_PROCESS_CHECK_INTERVAL = int(os.getenv('AUTO_PROCESS_CHECK_INTERVAL', 60))
 
 # --- Channel/Group Configuration ---
-LOG_GROUP_ID = -1004375001118
-REQUIRED_CHANNEL = "@AX4_MOBIN"
-CHANNEL_INVITE_LINK = "https://t.me/AX4_MOBIN"
+LOG_GROUP_ID = -1003982689528
+REQUIRED_CHANNEL = "@FREXY_OFC"
+CHANNEL_INVITE_LINK = "https://t.me/FREXY_OFC"
 
 # --- File Paths ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
