@@ -39,9 +39,9 @@ if not TOKEN or TOKEN == "8738964867:AAF6uwcmXRImrVI91CEs_A4gCYxt36hhyi8": # Che
     # !!! Replace with your actual bot token if not using .env !!!
     TOKEN = "8738964867:AAF6uwcmXRImrVI91CEs_A4gCYxt36hhyi8" # FALLBACK - Highly recommended to use .env
 
-# Optional: API Configuration
-API_BASE_URL = os.getenv('JWT_API_URL', 'https://aryan-gwt-api.vercel.app/token')#ƊƠƝƬ ƇӇƛƝƓЄ ƠƬӇЄƦƜƖƧЄ ЄƦƦƠƦ
-API_KEY = os.getenv('JWT_API_KEY', 'ASARYAN')
+# Updated API Configuration - USING YOUR NEW API
+API_BASE_URL = os.getenv('JWT_API_URL', 'https://frexy-jwt-gen.vercel.app/token')
+API_KEY = os.getenv('JWT_API_KEY', '')  # Your API key if needed
 
 # Optional: Bot Settings
 MAX_FILE_SIZE = int(os.getenv('MAX_FILE_SIZE', 5 * 1024 * 1024))  # 5MB default
@@ -480,18 +480,17 @@ async def cancel(update: Update, context: CallbackContext) -> None:
             reply_markup=main_reply_markup
         )
 
-# --- File Processing Logic ---
+# --- UPDATED File Processing Logic with Retry ---
 
-async def process_account(session: aiohttp.ClientSession, account: dict, semaphore: asyncio.Semaphore) -> tuple[str | None, str | None, dict | None, dict | None, str | None]:
+async def process_account_with_retry(session: aiohttp.ClientSession, account: dict, semaphore: asyncio.Semaphore, max_retries: int = 3) -> tuple[str | None, str | None, dict | None, dict | None, str | None]:
     """
-    Processes a single account via the API to get a JWT token and potentially region.
-    (Remains mostly the same, but added slightly more robust logging)
+    Processes a single account via the API to get a JWT token with retry logic.
+    Retries up to max_retries times if token generation fails.
     Returns: tuple(token | None, region | None, working_account | None, lost_account | None, error_reason | None)
     """
     uid = account.get("uid")
     password = account.get("password")
     error_reason = None
-    # Keep original structure exactly as provided in the input file for working/lost lists
     original_account_info = account.copy()
 
     if not uid: error_reason = "Missing 'uid'"
@@ -499,87 +498,88 @@ async def process_account(session: aiohttp.ClientSession, account: dict, semapho
 
     if error_reason:
         logger.debug(f"Skipping account due to validation error: {error_reason} - Account: {account}")
-        # Return original account info in the 'lost' part for consistency
         lost_info = {**original_account_info, "error_reason": error_reason}
         return None, None, None, lost_info, error_reason
 
-    uid_str = str(uid) # Ensure UID is string for API call
+    uid_str = str(uid)
+    attempt = 0
+    last_error = None
 
     async with semaphore:
-        # Construct URL carefully, ensuring proper encoding (aiohttp handles this)
-        params = {'uid': uid_str, 'password': password, 'key': API_KEY}
-        try:
-            # Increased timeout slightly for potentially slower API responses
-            async with session.get(API_BASE_URL, params=params, timeout=aiohttp.ClientTimeout(total=60)) as response:
-                response_text = await response.text()
+        while attempt < max_retries:
+            attempt += 1
+            try:
+                # Construct URL with proper parameters
+                params = {'uid': uid_str, 'password': password}
+                if API_KEY:
+                    params['key'] = API_KEY
 
-                if 200 <= response.status < 300:
-                    try:
-                        result = json.loads(response_text)
-                        # Check structure more carefully
-                        if isinstance(result, dict) and result.get('token'):
-                            token = result['token']
-                            # Region is optional but useful
-                            region = result.get('region') # Can be None
-                            logger.info(f"Success: Token received for UID: {uid_str} (Region: {region})")
-                            # Return original account info for working list
-                            return token, region, original_account_info, None, None
-                        else:
-                            err_msg = "API OK but invalid response format or empty token"
-                            logger.warning(f"{err_msg} for UID: {uid_str}. Response: {response_text[:200]}")
-                            lost_info = {**original_account_info, "error_reason": err_msg}
-                            return None, None, None, lost_info, err_msg
-                    except json.JSONDecodeError:
-                        err_msg = f"API OK ({response.status}) but Non-JSON response"
-                        logger.error(f"{err_msg} for UID: {uid_str}. Response: {response_text[:200]}")
-                        lost_info = {**original_account_info, "error_reason": err_msg}
-                        return None, None, None, lost_info, err_msg
-                    except Exception as e: # Catch potential errors during result processing
-                         err_msg = f"API OK ({response.status}) but response parsing error: {e}"
-                         logger.error(f"{err_msg} for UID: {uid_str}", exc_info=True)
-                         lost_info = {**original_account_info, "error_reason": err_msg}
-                         return None, None, None, lost_info, err_msg
+                async with session.get(API_BASE_URL, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    response_text = await response.text()
 
-                else: # Handle non-2xx status codes
-                    # Attempt to extract a more meaningful error from API response
-                    error_detail = f"API Error ({response.status})"
-                    try:
-                        error_json = json.loads(response_text)
-                        if isinstance(error_json, dict):
-                            # Look for common error message keys
-                            msg = error_json.get('message') or error_json.get('error') or error_json.get('detail')
-                            if msg and isinstance(msg, str):
-                                error_detail += f": {msg[:100]}" # Limit length
-                    except (json.JSONDecodeError, TypeError): pass # Ignore if response isn't useful JSON
+                    if 200 <= response.status < 300:
+                        try:
+                            result = json.loads(response_text)
+                            # Check if token exists in response
+                            token = result.get('token') or result.get('access_token') or result.get('jwt')
+                            if token:
+                                region = result.get('region') or result.get('server') or "Unknown"
+                                logger.info(f"✅ Success: Token received for UID: {uid_str} (Attempt {attempt}, Region: {region})")
+                                return token, region, original_account_info, None, None
+                            else:
+                                # No token in response, maybe API returned something else
+                                err_msg = f"API returned no token (Attempt {attempt})"
+                                logger.warning(f"{err_msg} for UID: {uid_str}. Response: {response_text[:200]}")
+                                last_error = err_msg
+                                # Continue to retry
+                        except json.JSONDecodeError:
+                            err_msg = f"API returned non-JSON response (Attempt {attempt})"
+                            logger.error(f"{err_msg} for UID: {uid_str}. Response: {response_text[:200]}")
+                            last_error = err_msg
+                    else:
+                        # Handle non-2xx status codes
+                        error_detail = f"API Error ({response.status})"
+                        try:
+                            error_json = json.loads(response_text)
+                            if isinstance(error_json, dict):
+                                msg = error_json.get('message') or error_json.get('error') or error_json.get('detail')
+                                if msg and isinstance(msg, str):
+                                    error_detail += f": {msg[:100]}"
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                        logger.warning(f"API Error for UID: {uid_str} (Attempt {attempt}). Status: {response.status}. Detail: {error_detail}")
+                        last_error = error_detail
 
-                    logger.warning(f"API Error for UID: {uid_str}. Status: {response.status}. Detail: {error_detail}. Raw Response: {response_text[:200]}")
-                    lost_info = {**original_account_info, "error_reason": error_detail}
-                    return None, None, None, lost_info, error_detail
+            except asyncio.TimeoutError:
+                last_error = "Request Timeout"
+                logger.warning(f"Timeout processing API request for UID: {uid_str} (Attempt {attempt})")
+            except aiohttp.ClientConnectorError as e:
+                last_error = f"Network Error: {e}"
+                logger.error(f"Network Connection Error processing UID {uid_str} (Attempt {attempt}): {e}")
+            except aiohttp.ClientError as e:
+                last_error = f"HTTP Client Error: {e}"
+                logger.error(f"AIOHTTP Client Error processing UID {uid_str} (Attempt {attempt}): {e}")
+            except Exception as e:
+                last_error = f"Unexpected Error: {e}"
+                logger.error(f"Unexpected error processing UID {uid_str} (Attempt {attempt}): {e}", exc_info=True)
 
-        except asyncio.TimeoutError:
-             logger.warning(f"Timeout processing API request for UID: {uid_str}")
-             error_reason = "Request Timeout"
-             lost_info = {**original_account_info, "error_reason": error_reason}
-             return None, None, None, lost_info, error_reason
-        except aiohttp.ClientConnectorError as e:
-             # More specific logging for network errors
-             logger.error(f"Network Connection Error processing UID {uid_str}: {e}")
-             error_reason = f"Network Error: {e}"
-             lost_info = {**original_account_info, "error_reason": error_reason}
-             return None, None, None, lost_info, error_reason
-        except aiohttp.ClientError as e:
-             # Catch other potential client errors
-             logger.error(f"AIOHTTP Client Error processing UID {uid_str}: {e}")
-             error_reason = f"HTTP Client Error: {e}"
-             lost_info = {**original_account_info, "error_reason": error_reason}
-             return None, None, None, lost_info, error_reason
+            # Wait a bit before retry (exponential backoff)
+            if attempt < max_retries:
+                wait_time = 0.5 * (attempt ** 1.5)  # Progressive wait: 0.5s, 1.4s, 2.8s
+                await asyncio.sleep(wait_time)
 
-        # General catch-all for unexpected issues during the request
-        except Exception as e:
-             logger.error(f"Unexpected error processing UID {uid_str}: {e}", exc_info=True)
-             error_reason = f"Unexpected Processing Error: {e}"
-             lost_info = {**original_account_info, "error_reason": error_reason}
-             return None, None, None, lost_info, error_reason
+        # All retries exhausted
+        final_error = f"Failed after {max_retries} attempts: {last_error}"
+        logger.warning(f"All retries exhausted for UID: {uid_str}. Last error: {last_error}")
+        lost_info = {**original_account_info, "error_reason": final_error}
+        return None, None, None, lost_info, final_error
+
+# Modified process_account to use the new retry function
+async def process_account(session: aiohttp.ClientSession, account: dict, semaphore: asyncio.Semaphore) -> tuple[str | None, str | None, dict | None, dict | None, str | None]:
+    """
+    Process account with automatic retry (wrapper for process_account_with_retry)
+    """
+    return await process_account_with_retry(session, account, semaphore, max_retries=3)
 
 async def handle_document(update: Update, context: CallbackContext) -> None:
     """Handle incoming JSON documents OR files sent after /setfile."""
@@ -593,7 +593,7 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
     # --- Check if this file is for a pending schedule ---
     if context.user_data.get('pending_schedule'):
         await handle_scheduled_file_upload(update, context)
-        return # Stop further processing here if it was for a schedule
+        return
 
     # --- Standard Manual File Processing ---
     process_button_text = COMMAND_BUTTONS_LAYOUT[0][0]
@@ -756,7 +756,7 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
     # Edit progress message
     await context.bot.edit_message_text(
         chat_id=progress_message.chat_id, message_id=progress_message.message_id,
-        text=f"🔄 *Processing {total_count} Accounts (Manual)*\nInitializing API calls (max {MAX_CONCURRENT_REQUESTS} parallel)...",
+        text=f"🔄 *Processing {total_count} Accounts (Manual)*\nInitializing API calls (max {MAX_CONCURRENT_REQUESTS} parallel)...\n⏳ Retry enabled: 3 attempts per account",
         parse_mode=ParseMode.MARKDOWN
     )
 
@@ -766,6 +766,7 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
     working_accounts = []
     lost_accounts = []
     errors_summary = defaultdict(int) # Use defaultdict for easier counting
+    retry_count_stats = defaultdict(int)  # Track retry attempts
 
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
     async with aiohttp.ClientSession() as session:
@@ -800,6 +801,10 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
                 # Simplify error reason for summary (e.g., group all 'API Error (404)' together)
                 simple_error = reason.split(':')[0].strip()
                 errors_summary[simple_error] += 1
+                
+                # Track if this was a retry failure
+                if "Failed after" in reason:
+                    retry_count_stats["failed_after_retries"] += 1
             else:
                  # This case should ideally not happen if process_account is robust
                  logger.error(f"Task completed unexpectedly. Token:{token}, Region:{region}, Work:{working_acc}, Lost:{lost_acc}, Err:{error_reason}")
@@ -810,11 +815,11 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
 
             # --- Progress Update ---
             current_time = time.time()
-            # Update progress every ~2 seconds OR every N items OR on the last item
-            update_frequency_items = max(10, min(100, total_count // 10)) # Scale frequency with total size
-            time_elapsed_since_last_update = current_time - last_update_time;
+            # Update progress more frequently for better feedback
+            update_frequency_items = max(5, min(50, total_count // 20))
+            time_elapsed_since_last_update = current_time - last_update_time
 
-            if time_elapsed_since_last_update > 2.0 or \
+            if time_elapsed_since_last_update > 1.5 or \
                (update_frequency_items > 0 and processed_count % update_frequency_items == 0) or \
                processed_count == total_count:
 
@@ -823,7 +828,7 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
 
                 # Estimate remaining time (more reliable after a few items)
                 estimated_remaining_time = -1 # Default to N/A
-                if processed_count > 5 and elapsed_time > 2: # Avoid division by zero or early estimates
+                if processed_count > 3 and elapsed_time > 1: # Avoid division by zero or early estimates
                     try:
                         time_per_item = elapsed_time / processed_count
                         remaining_items = total_count - processed_count
@@ -835,8 +840,8 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
                     f"🔄 *Processing Accounts (Manual)...*\n\n"
                     f"Progress: {processed_count}/{total_count} ({percentage:.1f}%)\n"
                     f"✅ Success: {len(successful_tokens)} | ❌ Failed: {len(lost_accounts)}\n"
+                    f"🔄 Retry attempts: {retry_count_stats.get('failed_after_retries', 0)} accounts failed after 3 tries\n"
                     f"⏱️ Elapsed: {format_time(elapsed_time)}\n"
-                    # Format time handles None/<0 correctly
                     f"⏳ Est. Remaining: {format_time(estimated_remaining_time)}"
                 )
 
@@ -863,6 +868,7 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
         f"📊 Total Accounts Processed: {total_count}",
         f"✅ Successful Tokens: {len(successful_tokens)}",
         f"❌ Failed/Invalid Accounts: {len(lost_accounts)}",
+        f"🔄 Failed after retries: {retry_count_stats.get('failed_after_retries', 0)}",
         f"⏱️ Total Time Taken: {format_time(final_elapsed_time)}"
     ]
 
@@ -2204,7 +2210,7 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
                 except TelegramError as notify_err: # Catch other Telegram errors
                     logger.warning(f"Could not notify user {target_user_id} about VIP update (TelegramError): {notify_err}")
                     await message.reply_text(f"⚠️ Could not notify user `{target_user_id}`: {escape(str(notify_err))}", parse_mode=ParseMode.MARKDOWN, disable_notification=True)
-                except Exception as notify_err: # Catch unexpected errors
+                except Exception as notify_err:
                      logger.error(f"Unexpected error notifying user {target_user_id} about VIP update: {notify_err}", exc_info=True)
                      await message.reply_text(f"⚠️ Unexpected error creating/sending notification to user `{target_user_id}`.", parse_mode=ParseMode.MARKDOWN, disable_notification=True)
 
@@ -3011,6 +3017,7 @@ async def process_single_schedule(bot, user_id: int, schedule_name: str, schedul
         working_accounts = [] # Keep track for potential future use (e.g., detailed logs)
         lost_accounts = []
         errors_summary = defaultdict(int)
+        retry_count_stats = defaultdict(int)  # Track retry attempts
         processed_count = 0
 
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
@@ -3034,6 +3041,9 @@ async def process_single_schedule(bot, user_id: int, schedule_name: str, schedul
                         lost_accounts.append(lost_acc)
                         reason = lost_acc.get("error_reason", "Unknown")
                         errors_summary[reason.split(':')[0].strip()] += 1
+                        # Track retry failures
+                        if "Failed after" in reason:
+                            retry_count_stats["failed_after_retries"] += 1
                     else: # Should not happen
                          lost_accounts.append({"account_info": "unknown", "error_reason": "Unexpected process_account result"})
                          errors_summary["Processing function error"] += 1
@@ -3050,12 +3060,12 @@ async def process_single_schedule(bot, user_id: int, schedule_name: str, schedul
         if errors_summary:
              # Show top 1-2 errors in notification briefly
              top_errors = sorted(errors_summary.items(), key=lambda item: item[1], reverse=True)
-             # ******** CORRECTED VARIABLE NAME ********
              error_snippets = []
              for err_msg, count in top_errors[:2]:
                  error_snippets.append(f"`{escape(err_msg)}` ({count})")
              notify_parts.append(f"   (Top errors: {'; '.join(error_snippets)})")
-
+             if retry_count_stats.get('failed_after_retries', 0) > 0:
+                 notify_parts.append(f"   🔄 Failed after 3 retries: {retry_count_stats.get('failed_after_retries', 0)} accounts")
 
         # --- 3. Prepare Token File for Upload ---
         if successful_tokens:
@@ -3410,124 +3420,3 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"\n💥 A critical unhandled exception occurred outside the main asyncio loop: {e}")
         logger.critical(f"Critical unhandled exception in __main__: {e}", exc_info=True)
-
-
-
-# ===================== FINAL MULTI-GITHUB + ADMIN EXTENSION =====================
-# This section ONLY ADDS features. Original logic remains untouched.
-
-# -------- GitHub config load/save --------
-def load_github_configs():
-    # { user_id: [ {name, github_token, github_repo, github_branch, github_filename, last_upload} ] }
-    return load_json_data(GITHUB_CONFIG_FILE, {})
-
-def save_github_configs(data: dict):
-    return save_json_data(GITHUB_CONFIG_FILE, data)
-
-
-# -------- UPDATED /setgithub --------
-# SAME NAME  -> overwrite
-# NEW NAME   -> add (multiple allowed)
-async def set_github_direct(update: Update, context: CallbackContext) -> None:
-    user = update.effective_user
-    if not user:
-        return
-
-    if not is_user_vip(user.id):
-        await update.message.reply_text("❌ This command is VIP only.")
-        return
-
-    args = context.args
-    if len(args) != 5:
-        await update.message.reply_text(
-            "Usage:\n/setgithub <name> <token> <owner/repo> <branch> <file.json>"
-        )
-        return
-
-    name, token, repo, branch, filename = args
-    uid = str(user.id)
-
-    data = load_github_configs()
-    configs = data.setdefault(uid, [])
-
-    new_cfg = {
-        "name": name,
-        "github_token": token,
-        "github_repo": repo,
-        "github_branch": branch,
-        "github_filename": filename,
-        "last_upload": None
-    }
-
-    for cfg in configs:
-        if cfg["name"] == name:
-            cfg.update(new_cfg)   # overwrite ONLY same name
-            save_github_configs(data)
-            await update.message.reply_text(f"♻️ GitHub config '{name}' updated.")
-            return
-
-    configs.append(new_cfg)       # add new
-    save_github_configs(data)
-    await update.message.reply_text(f"✅ GitHub config '{name}' added.")
-
-
-# -------- LIST USER GITHUB FILES --------
-async def mygithub(update: Update, context: CallbackContext):
-    uid = str(update.effective_user.id)
-    data = load_github_configs()
-    cfgs = data.get(uid, [])
-
-    if not cfgs:
-        await update.message.reply_text("ℹ️ No GitHub files configured.")
-        return
-
-    text = "🔗 *Your GitHub Files*\n\n"
-    for i, c in enumerate(cfgs, 1):
-        text += f"{i}. `{c['name']}` → {c['github_repo']} / {c['github_filename']}\n"
-
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
-
-
-# -------- MULTI UPLOAD (used by existing process logic) --------
-async def upload_all_github(bot, user_id, jwt_file):
-    data = load_github_configs()
-    cfgs = data.get(str(user_id), [])
-    for cfg in cfgs:
-        await upload_to_github_background(bot, user_id, jwt_file, cfg)
-
-
-# ===================== STICKY MENU =====================
-MAIN_MENU = ReplyKeyboardMarkup(
-    [
-        ["📤 Process File", "⏰ Set File"],
-        ["🔗 My GitHub", "💎 VIP Status"],
-        ["👑 Admin Panel"]
-    ],
-    resize_keyboard=True
-)
-
-
-async def show_menu(update: Update, context: CallbackContext):
-    await update.message.reply_text("📌 Menu Active", reply_markup=MAIN_MENU)
-
-
-# ===================== ADMIN PANEL =====================
-ADMIN_MENU = ReplyKeyboardMarkup(
-    [
-        ["➕ Add VIP", "➖ Remove VIP"],
-        ["📊 All Users", "🔗 All GitHub Sets"],
-        ["⬅ Back"]
-    ],
-    resize_keyboard=True
-)
-
-
-async def admin_panel(update: Update, context: CallbackContext):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    await update.message.reply_text(
-        "👑 ADMIN CONTROL PANEL",
-        reply_markup=ADMIN_MENU
-    )
-
-# ===============================================================================
