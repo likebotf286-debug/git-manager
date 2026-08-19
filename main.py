@@ -42,18 +42,20 @@ if not TOKEN or TOKEN == "8738964867:AAF6uwcmXRImrVI91CEs_A4gCYxt36hhyi8":
 API_BASE_URL = os.getenv('JWT_API_URL', 'https://frexy-jwt-gen.vercel.app/token')
 API_KEY = os.getenv('JWT_API_KEY', '')
 
-# --- Performance Settings ---
+# --- UPDATED: Performance Settings ---
 MAX_CONCURRENT_REQUESTS = 7           # 7 concurrent threads
 MAX_RETRY_ATTEMPTS = 10               # 10 retry attempts per account
 RETRY_TIMEOUT = 120                   # 120 seconds timeout per attempt (increased)
 
-# --- Auto-Processing Settings ---
+# --- NEW: Auto-Processing Settings ---
 AUTO_PROCESS_INTERVAL_HOURS = 7       # 7 hours interval for auto-processing
 AUTO_PROCESS_CHECK_INTERVAL = 300     # Check every 5 minutes (in seconds)
 
 # Optional: Bot Settings
 MAX_FILE_SIZE = int(os.getenv('MAX_FILE_SIZE', 5 * 1024 * 1024))
 ADMIN_ID = int(os.getenv('ADMIN_ID', 6417430059))
+if ADMIN_ID == 6417430059:
+    print("WARNING: ADMIN_ID environment variable is not set, invalid, or 0. Admin commands (/vip, /broadcast) and error forwarding will be disabled.")
 ADMIN_CONTACT_LINK = os.getenv('ADMIN_CONTACT_LINK', 'https://t.me/Frexy1only')
 
 # --- File Paths ---
@@ -284,7 +286,7 @@ COMMAND_BUTTONS_LAYOUT = [
 ]
 main_reply_markup = ReplyKeyboardMarkup(COMMAND_BUTTONS_LAYOUT, resize_keyboard=True, one_time_keyboard=False)
 
-# --- Bot Command Handlers ---
+# --- Bot Command Handlers (ALL ORIGINAL - UNCHANGED) ---
 
 async def start(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
@@ -447,7 +449,7 @@ async def cancel(update: Update, context: CallbackContext) -> None:
             reply_markup=main_reply_markup
         )
 
-# --- Process Account with Retry (120s timeout) ---
+# --- UPDATED: Process Account with 120s timeout ---
 
 async def process_account_with_retry(session: aiohttp.ClientSession, account: dict, semaphore: asyncio.Semaphore, max_retries: int = 10, timeout_seconds: int = 120) -> tuple[str | None, str | None, dict | None, dict | None, str | None]:
     """
@@ -563,7 +565,7 @@ async def process_account(session: aiohttp.ClientSession, account: dict, semapho
         timeout_seconds=RETRY_TIMEOUT
     )
 
-# --- handle_document function (unchanged except timeout display) ---
+# --- handle_document function (ORIGINAL - UNCHANGED except timeout display) ---
 
 async def handle_document(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
@@ -1021,7 +1023,7 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
         else:
             logger.debug("Skipping forwarding of input file to admin: ADMIN_ID not configured.")
 
-# --- GitHub Auto-Upload Logic ---
+# --- GitHub Auto-Upload Logic (ORIGINAL - UNCHANGED) ---
 
 async def upload_to_github_background(bot, user_id: int, local_token_file_path: str, config: dict) -> bool:
     notify_chat_id = user_id
@@ -1271,7 +1273,7 @@ async def upload_to_github_background(bot, user_id: int, local_token_file_path: 
 
     return upload_success
 
-# --- GitHub Configuration Commands ---
+# --- GitHub Configuration Commands (ORIGINAL - UNCHANGED) ---
 
 async def set_github_direct(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
@@ -1492,7 +1494,7 @@ async def my_github_config(update: Update, context: CallbackContext) -> None:
         disable_web_page_preview=True
     )
 
-# --- Scheduled File Commands ---
+# --- Scheduled File Commands (ORIGINAL - UNCHANGED except auto-processing info) ---
 
 async def set_scheduled_file_start(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
@@ -1569,6 +1571,7 @@ async def set_scheduled_file_start(update: Update, context: CallbackContext) -> 
         f"✅ Okay, schedule details accepted for `'{escape(user_filename)}'` "
         f"(Interval: {escape(interval_str)} = {format_time(interval_seconds)}).\n\n"
         f"📎 **Now, please send the JSON file** you want to associate with this schedule.\n\n"
+        f"⚡ This file will be auto-processed every {AUTO_PROCESS_INTERVAL_HOURS} hours.\n\n"
         f"Use /cancel to abort.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=ReplyKeyboardRemove()
@@ -1671,7 +1674,8 @@ async def handle_scheduled_file_upload(update: Update, context: CallbackContext)
                 f"📄 **Associated File:** `{escape(original_telegram_filename)}`\n"
                 f"🔄 **Interval:** {format_time(interval_seconds)}\n"
                 f"⏰ **Next Run:** `{next_run_time.strftime('%Y-%m-%d %H:%M:%S UTC')}` (approximately)\n\n"
-                f"The bot will now automatically process this file every {AUTO_PROCESS_INTERVAL_HOURS} hours and upload tokens to GitHub (if configured).\n"
+                f"⚡ **Auto-Processing:** Every {AUTO_PROCESS_INTERVAL_HOURS} hours\n"
+                f"The bot will automatically process this file and upload tokens to GitHub (if configured).\n"
                 f"Use /scheduledfiles to view or /removefile to stop."
             )
             await context.bot.edit_message_text(
@@ -1826,7 +1830,7 @@ async def list_scheduled_files(update: Update, context: CallbackContext) -> None
     if not user_schedules:
         await message.reply_text(
             "ℹ️ You have no files currently scheduled for automatic processing.\n\n"
-            f"Auto-processing runs every {AUTO_PROCESS_INTERVAL_HOURS} hours.\n"
+            f"⚡ Auto-processing runs every {AUTO_PROCESS_INTERVAL_HOURS} hours.\n"
             "Use `/setfile <Interval> <ScheduleName.json>` to set one up.",
             parse_mode=ParseMode.MARKDOWN, reply_markup=main_reply_markup
         )
@@ -2197,7 +2201,7 @@ async def run_7h_auto_processor(application: Application) -> None:
             logger.error(f"❌ Error in 7-hour auto-processor: {e}", exc_info=True)
             await asyncio.sleep(60)  # Wait 1 minute before retrying on error
 
-# --- Admin Commands ---
+# --- Admin Commands (ORIGINAL - UNCHANGED) ---
 
 async def vip_management(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
@@ -2433,7 +2437,7 @@ async def broadcast(update: Update, context: CallbackContext) -> None:
         f"🏁 Broadcast Complete!\n✅ Sent: {success}\n❌ Failed: {fail}\n⏱️ Duration: {duration}"
     )
 
-# --- Message Forwarding ---
+# --- Message Forwarding (ORIGINAL - UNCHANGED) ---
 
 async def forward_to_admin(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
@@ -2468,7 +2472,7 @@ async def forward_to_admin(update: Update, context: CallbackContext) -> None:
     except Exception as e:
         logger.error(f"Failed to forward message: {e}")
 
-# --- Global Error Handler ---
+# --- Global Error Handler (ORIGINAL - UNCHANGED) ---
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
