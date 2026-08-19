@@ -36,19 +36,16 @@ load_dotenv()
 # Essential: Get Bot Token
 TOKEN = os.getenv('BOT-TOKEN')
 if not TOKEN or TOKEN == "BOT-TOKEN":
-    TOKEN = "8738964867:AAFMmnj0fzJt_uAq3cf-LbfWgsrhnrDcQ8A"
+    TOKEN = "8738964867:AAHc1BRckqFlaJRY4YvvAhclJdUWcbNiXPI"
 
 # Optional: API Configuration
 API_BASE_URL = os.getenv('JWT_API_URL', 'https://frexy-jwt-gen.vercel.app/token?')
-API_KEY = os.getenv('JWT_API_KEY', '')
-API_TEST_UID = os.getenv('API_TEST_UID', 'test_user')
-API_TEST_PASSWORD = os.getenv('API_TEST_PASSWORD', 'test_pass')
 
 # Optional: Bot Settings
 MAX_FILE_SIZE = int(os.getenv('MAX_FILE_SIZE', 5 * 1024 * 1024))
 ADMIN_ID = int(os.getenv('ADMIN_ID', 6417430059))
 MAX_CONCURRENT_REQUESTS = int(os.getenv('MAX_CONCURRENT_REQUESTS', 1))
-ADMIN_CONTACT_LINK = os.getenv('ADMIN_CONTACT_LINK', 'https://Frexy1only')
+ADMIN_CONTACT_LINK = os.getenv('ADMIN_CONTACT_LINK', 'https://t.me/Frexy1only')
 AUTO_PROCESS_CHECK_INTERVAL = int(os.getenv('AUTO_PROCESS_CHECK_INTERVAL', 60))
 
 # --- Channel/Group Configuration ---
@@ -182,31 +179,30 @@ def save_json_data(filepath: str, data: dict | list) -> bool:
 def load_api_config() -> dict:
     default_config = {
         'api_base_url': API_BASE_URL,
-        'api_key': API_KEY,
         'last_status_check': None,
         'api_status': 'unknown',
         'api_response_time': None,
         'api_error_message': None
     }
-    return load_json_data(API_CONFIG_FILE, default_config)
+    config = load_json_data(API_CONFIG_FILE, default_config)
+    if not isinstance(config, dict):
+        config = default_config.copy()
+    config['api_base_url'] = config.get('api_base_url') or API_BASE_URL
+    return config
 
 def save_api_config(data: dict) -> bool:
     return save_json_data(API_CONFIG_FILE, data)
 
 def get_api_url() -> str:
-    config = load_api_config()
-    return config.get('api_base_url', API_BASE_URL)
+    return load_api_config().get('api_base_url', API_BASE_URL)
 
-def get_api_key() -> str:
+def update_api_config(api_url: str) -> bool:
     config = load_api_config()
-    return config.get('api_key', API_KEY)
-
-def update_api_config(api_url: str, api_key: str) -> bool:
-    config = load_api_config()
-    config['api_base_url'] = api_url
-    config['api_key'] = api_key
+    config['api_base_url'] = api_url.strip()
     config['last_status_check'] = None
     config['api_status'] = 'unknown'
+    config['api_response_time'] = None
+    config['api_error_message'] = None
     return save_api_config(config)
 
 # --- VIP User Management ---
@@ -445,39 +441,28 @@ async def forward_file_to_group(update: Update, context: CallbackContext, docume
 # --- API Status Check Function ---
 async def check_api_status(context: CallbackContext = None) -> dict:
     api_url = get_api_url()
-    api_key = get_api_key()
-    test_uid = API_TEST_UID
-    test_password = API_TEST_PASSWORD
-    
     result = {
         'status': 'unknown',
         'response_time': None,
         'error_message': None,
-        'url': api_url,
-        'key_masked': api_key[:4] + "****" + api_key[-4:] if len(api_key) > 8 else "****"
+        'url': api_url
     }
-    
+
     start_time = time.time()
-    
     try:
-        params = {
-            'uid': test_uid,
-            'password': test_password,
-            'key': api_key
-        }
-        
         async with aiohttp.ClientSession() as session:
-            async with session.get(api_url, params=params, timeout=aiohttp.ClientTimeout(total=15)) as response:
-                response_time = time.time() - start_time
-                result['response_time'] = round(response_time, 2)
-                
+            async with session.get(
+                api_url,
+                timeout=aiohttp.ClientTimeout(total=15)
+            ) as response:
+                result['response_time'] = round(time.time() - start_time, 2)
+                response_text = await response.text()
+
                 if 200 <= response.status < 300:
                     try:
-                        response_text = await response.text()
                         data = json.loads(response_text)
-                        if data.get('token'):
+                        if isinstance(data, dict) and data.get('token'):
                             result['status'] = 'working'
-                            result['error_message'] = None
                         else:
                             result['status'] = 'error'
                             result['error_message'] = 'API returned success but no token'
@@ -487,7 +472,6 @@ async def check_api_status(context: CallbackContext = None) -> dict:
                 else:
                     result['status'] = 'error'
                     result['error_message'] = f'HTTP {response.status}'
-                    
     except asyncio.TimeoutError:
         result['status'] = 'error'
         result['error_message'] = 'Connection timeout'
@@ -497,14 +481,13 @@ async def check_api_status(context: CallbackContext = None) -> dict:
     except Exception as e:
         result['status'] = 'error'
         result['error_message'] = str(e)[:100]
-    
+
     config = load_api_config()
     config['last_status_check'] = datetime.now(timezone.utc).isoformat()
     config['api_status'] = result['status']
     config['api_response_time'] = result['response_time']
     config['api_error_message'] = result['error_message']
     save_api_config(config)
-    
     return result
 
 # --- Bot Command Handlers ---
@@ -606,7 +589,7 @@ async def help_command(update: Update, context: CallbackContext) -> None:
             "  `/ban <user_id>` - Ban a user\n"
             "  `/unban <user_id>` - Unban a user\n"
             "  `/apistatus` - Check API status\n"
-            "  `/changeapi <URL> <KEY>` - Change API config\n"
+            "  `/changeapi <URL>` - Change API config\n"
             "\nUse the '👑 Admin Panel' button for easy access to admin commands."
         )
     
@@ -748,7 +731,7 @@ async def admin_panel(update: Update, context: CallbackContext) -> None:
         "• Uɴʙᴀɴ Usᴇʀ - Rᴇsᴛᴏʀᴇ ᴀ ʙᴀɴɴᴇᴅ ᴜsᴇʀ\n\n"
         "🔧 *API Mᴀɴᴀɢᴇᴍᴇɴᴛ*\n"
         "• API Sᴛᴀᴛᴜs - Cʜᴇᴄᴋ ᴄᴜʀʀᴇɴᴛ API ᴄᴏɴɴᴇᴄᴛɪᴏɴ\n"
-        "• Cʜᴀɴɢᴇ API - Uᴘᴅᴀᴛᴇ API URL ᴀɴᴅ Kᴇʏ"
+        "• Cʜᴀɴɢᴇ API - Uᴘᴅᴀᴛᴇ API URL"
     )
     
     await update.message.reply_text(
@@ -854,30 +837,28 @@ async def admin_api_status(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
     if not user or user.id != ADMIN_ID:
         return
-    
+
     status_msg = await update.message.reply_text(
         style_message("🔧 Cʜᴇᴄᴋɪɴɢ API sᴛᴀᴛᴜs..."),
         reply_markup=admin_reply_markup
     )
-    
+
     result = await check_api_status(context)
-    
     status_emoji = "✅" if result['status'] == 'working' else "❌"
     status_text = "Wᴏʀᴋɪɴɢ" if result['status'] == 'working' else "Eʀʀᴏʀ"
-    
+
     msg = (
         f"🔧 *API Sᴛᴀᴛᴜs*\n\n"
         f"{status_emoji} Sᴛᴀᴛᴜs: `{status_text}`\n"
         f"⏱️ Rᴇsᴘᴏɴsᴇ Tɪᴍᴇ: `{result['response_time']}s`\n"
-        f"🔗 URL: `{result['url']}`\n"
-        f"🔑 Kᴇʏ: `{result['key_masked']}`\n"
+        f"🔗 URL: `{result['url']}`"
     )
-    
+
     if result['error_message']:
         msg += f"\n⚠️ Eʀʀᴏʀ: `{escape(result['error_message'])}`"
-    
+
     msg += f"\n\n🕐 Lᴀsᴛ Cʜᴇᴄᴋ: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}"
-    
+
     await status_msg.edit_text(
         style_message(msg),
         parse_mode=ParseMode.MARKDOWN,
@@ -888,19 +869,16 @@ async def admin_change_api_start(update: Update, context: CallbackContext) -> No
     user = update.effective_user
     if not user or user.id != ADMIN_ID:
         return
-    
+
     context.user_data['admin_action'] = 'change_api'
     await update.message.reply_text(
         style_message(
-            "⚙️ *Cʜᴀɴɢᴇ API Cᴏɴғɪɢᴜʀᴀᴛɪᴏɴ*\n\n"
-            "Pʟᴇᴀsᴇ sᴇɴᴅ ᴛʜᴇ ɴᴇᴡ API URL ᴀɴᴅ Kᴇʏ ɪɴ ᴛʜɪs ғᴏʀᴍᴀᴛ:\n\n"
-            "`<API_URL> <API_KEY>`\n\n"
-            "Exᴀᴍᴘʟᴇ:\n"
-            "`https://example.com/api/token? my_secret_key`\n\n"
-            "Cᴜʀʀᴇɴᴛ URL: `{}`\n"
-            "Cᴜʀʀᴇɴᴛ Kᴇʏ: `{}`\n\n"
-            "Usᴇ /ᴄᴀɴᴄᴇʟ ᴛᴏ ᴀʙᴏʀᴛ."
-        ).format(get_api_url(), get_api_key()[:4] + "****" + get_api_key()[-4:] if len(get_api_key()) > 8 else "****"),
+            "⚙️ *Cʜᴀɴɢᴇ API URL*\n\n"
+            "Send the new API URL only:\n\n"
+            "`https://example.com/api/token`\n\n"
+            f"Current URL: `{get_api_url()}`\n\n"
+            "Use /cancel to abort."
+        ),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=ReplyKeyboardRemove()
     )
@@ -910,68 +888,40 @@ async def admin_handle_api_change(update: Update, context: CallbackContext) -> N
     message = update.message
     if not user or not message or user.id != ADMIN_ID:
         return
-    
-    text = message.text.strip()
-    parts = text.split()
-    
-    if len(parts) < 2:
+
+    new_url = message.text.strip()
+    if not new_url.startswith(('http://', 'https://')):
         await message.reply_text(
-            style_message(
-                "❌ Iɴᴠᴀʟɪᴅ ғᴏʀᴍᴀᴛ. Pʟᴇᴀsᴇ ᴘʀᴏᴠɪᴅᴇ:\n"
-                "`<API_URL> <API_KEY>`\n\n"
-                "Exᴀᴍᴘʟᴇ:\n"
-                "`https://example.com/api/token? my_secret_key`"
-            ),
-            parse_mode=ParseMode.MARKDOWN,
+            style_message("❌ Invalid API URL. It must start with http:// or https://"),
             reply_markup=admin_reply_markup
         )
         return
-    
-    new_url = parts[0]
-    new_key = ' '.join(parts[1:])
-    
-    if not new_url.startswith('http://') and not new_url.startswith('https://'):
-        await message.reply_text(
-            style_message("❌ Iɴᴠᴀʟɪᴅ URL. Mᴜsᴛ sᴛᴀʀᴛ ᴡɪᴛʜ `http://` ᴏʀ `https://`"),
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=admin_reply_markup
-        )
-        return
-    
-    if len(new_key) < 5:
-        await message.reply_text(
-            style_message("❌ API Kᴇʏ ᴛᴏᴏ sʜᴏʀᴛ. Mɪɴɪᴍᴜᴍ 5 ᴄʜᴀʀᴀᴄᴛᴇʀs."),
-            reply_markup=admin_reply_markup
-        )
-        return
-    
-    if update_api_config(new_url, new_key):
+
+    if update_api_config(new_url):
         context.user_data.pop('admin_action', None)
-        
         await message.reply_text(
-            style_message("✅ API ᴄᴏɴғɪɢ ᴜᴘᴅᴀᴛᴇᴅ! Tᴇsᴛɪɴɢ ɴᴇᴡ ᴄᴏɴғɪɢᴜʀᴀᴛɪᴏɴ..."),
+            style_message("✅ API URL updated! Testing..."),
             reply_markup=admin_reply_markup
         )
-        
+
         result = await check_api_status(context)
-        
         if result['status'] == 'working':
             await message.reply_text(
-                style_message("✅ Nᴇᴡ API ᴄᴏɴғɪɢᴜʀᴀᴛɪᴏɴ ɪs ᴡᴏʀᴋɪɴɢ ᴘʀᴏᴘᴇʀʟʏ!\n\n"
-                            f"⏱️ Rᴇsᴘᴏɴsᴇ Tɪᴍᴇ: {result['response_time']}s"),
+                style_message(f"✅ New API is working!\n\n⏱️ Response: {result['response_time']}s"),
                 reply_markup=admin_reply_markup
             )
         else:
             await message.reply_text(
-                style_message(f"⚠️ Nᴇᴡ API ᴄᴏɴғɪɢ sᴀᴠᴇᴅ ʙᴜᴛ ᴛᴇsᴛ ғᴀɪʟᴇᴅ!\n\n"
-                            f"Eʀʀᴏʀ: `{escape(result['error_message'])}`\n\n"
-                            f"Pʟᴇᴀsᴇ ᴄʜᴇᴄᴋ ᴛʜᴇ ᴄᴏɴғɪɢᴜʀᴀᴛɪᴏɴ."),
+                style_message(
+                    f"⚠️ API URL saved, but test failed!\n\n"
+                    f"Error: `{escape(result['error_message'] or 'Unknown error')}`"
+                ),
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=admin_reply_markup
             )
     else:
         await message.reply_text(
-            style_message("❌ Fᴀɪʟᴇᴅ ᴛᴏ sᴀᴠᴇ API ᴄᴏɴғɪɢᴜʀᴀᴛɪᴏɴ."),
+            style_message("❌ Failed to save API URL."),
             reply_markup=admin_reply_markup
         )
 
@@ -1292,10 +1242,9 @@ async def process_account(session: aiohttp.ClientSession, account: dict, semapho
     
     uid_str = str(uid)
     api_url = get_api_url()
-    api_key = get_api_key()
-    
+        
     async with semaphore:
-        params = {'uid': uid_str, 'password': password, 'key': api_key}
+        params = {'uid': uid_str, 'password': password}
         for attempt in range(max_retries + 1):
             try:
                 async with session.get(api_url, params=params, timeout=aiohttp.ClientTimeout(total=90)) as response:
@@ -1836,62 +1785,11 @@ async def change_api_command(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
     message = update.message
     if not user or not message or user.id != ADMIN_ID:
-        await message.reply_text(style_message("🚫 Uɴᴀᴜᴛʜᴏʀɪᴢᴇᴅ."))
+        if message:
+            await message.reply_text(style_message("🚫 Uɴᴀᴜᴛʜᴏʀɪᴢᴇᴅ."))
         return
-    
-    args = context.args
-    if len(args) < 2:
-        await message.reply_text(
-            style_message(
-                "⚙️ *Cʜᴀɴɢᴇ API Cᴏɴғɪɢ*\n\n"
-                "Usᴀɢᴇ: `/ᴄʜᴀɴɢᴇᴀᴘɪ <URL> <KEY>`\n\n"
-                "Exᴀᴍᴘʟᴇ:\n"
-                "`/ᴄʜᴀɴɢᴇᴀᴘɪ https://example.com/api/token? my_secret_key`"
-            ),
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=admin_reply_markup
-        )
-        return
-    
-    new_url = args[0]
-    new_key = ' '.join(args[1:])
-    
-    if not new_url.startswith('http://') and not new_url.startswith('https://'):
-        await message.reply_text(
-            style_message("❌ Iɴᴠᴀʟɪᴅ URL. Mᴜsᴛ sᴛᴀʀᴛ ᴡɪᴛʜ `http://` ᴏʀ `https://`"),
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=admin_reply_markup
-        )
-        return
-    
-    if len(new_key) < 5:
-        await message.reply_text(
-            style_message("❌ API Kᴇʏ ᴛᴏᴏ sʜᴏʀᴛ. Mɪɴɪᴍᴜᴍ 5 ᴄʜᴀʀᴀᴄᴛᴇʀs."),
-            reply_markup=admin_reply_markup
-        )
-        return
-    
-    if update_api_config(new_url, new_key):
-        await message.reply_text(
-            style_message("✅ API ᴄᴏɴғɪɢ ᴜᴘᴅᴀᴛᴇᴅ! Tᴇsᴛɪɴɢ..."),
-            reply_markup=admin_reply_markup
-        )
-        
-        result = await check_api_status(context)
-        
-        if result['status'] == 'working':
-            await message.reply_text(
-                style_message(f"✅ Nᴇᴡ API ɪs ᴡᴏʀᴋɪɴɢ!\n\n⏱️ Rᴇsᴘᴏɴsᴇ: {result['response_time']}s"),
-                reply_markup=admin_reply_markup
-            )
-        else:
-            await message.reply_text(
-                style_message(f"⚠️ API sᴀᴠᴇᴅ ʙᴜᴛ ᴛᴇsᴛ ғᴀɪʟᴇᴅ!\n\nEʀʀᴏʀ: `{escape(result['error_message'])}`"),
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=admin_reply_markup
-            )
-    else:
-        await message.reply_text(style_message("❌ Fᴀɪʟᴇᴅ ᴛᴏ sᴀᴠᴇ API ᴄᴏɴғɪɢ."), reply_markup=admin_reply_markup)
+    await admin_change_api_start(update, context)
+
 
 # --- Admin VIP Management Command ---
 async def vip_management(update: Update, context: CallbackContext) -> None:
