@@ -49,9 +49,9 @@ ADMIN_ID = int(os.getenv('ADMIN_ID', 6417430059)) # Default to 0 (disabled) if n
 # Check and warn if ADMIN_ID is 0 but commands are expected
 if ADMIN_ID == 6417430059:
     print("WARNING: ADMIN_ID environment variable is not set, invalid, or 0. Admin commands (/vip, /broadcast) and error forwarding will be disabled.")
-MAX_CONCURRENT_REQUESTS = int(os.getenv('MAX_CONCURRENT_REQUESTS', 10)) # Limit concurrent API requests
+MAX_CONCURRENT_REQUESTS = int(os.getenv('MAX_CONCURRENT_REQUESTS', 8)) # Limit concurrent API requests
 ADMIN_CONTACT_LINK = os.getenv('ADMIN_CONTACT_LINK', 'https://t.me/Frexy1only') # Default admin contact link
-AUTO_PROCESS_CHECK_INTERVAL = int(os.getenv('AUTO_PROCESS_CHECK_INTERVAL', 60)) # Seconds between scheduler checks (min 60 recommended)
+AUTO_PROCESS_CHECK_INTERVAL = int(os.getenv('AUTO_PROCESS_CHECK_INTERVAL', 120)) # Seconds between scheduler checks (min 60 recommended)
 
 # --- File Paths ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
