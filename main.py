@@ -482,104 +482,127 @@ async def cancel(update: Update, context: CallbackContext) -> None:
 
 # --- File Processing Logic ---
 
-async def process_account(session: aiohttp.ClientSession, account: dict, semaphore: asyncio.Semaphore) -> tuple[str | None, str | None, dict | None, dict | None, str | None]:
+async def process_account(session: aiohttp.ClientSession, account: dict, semaphore: asyncio.Semaphore, max_retries: int = 6) -> tuple[str | None, str | None, dict | None, dict | None, str | None]:
     """
     Processes a single account via the API to get a JWT token and potentially region.
-    (Remains mostly the same, but added slightly more robust logging)
+    Will retry up to max_retries times if token generation fails.
     Returns: tuple(token | None, region | None, working_account | None, lost_account | None, error_reason | None)
     """
     uid = account.get("uid")
     password = account.get("password")
-    error_reason = None
-    # Keep original structure exactly as provided in the input file for working/lost lists
     original_account_info = account.copy()
-
-    if not uid: error_reason = "Missing 'uid'"
-    elif not password: error_reason = "Missing 'password'"
-
-    if error_reason:
-        logger.debug(f"Skipping account due to validation error: {error_reason} - Account: {account}")
-        # Return original account info in the 'lost' part for consistency
+    
+    if not uid:
+        error_reason = "Missing 'uid'"
         lost_info = {**original_account_info, "error_reason": error_reason}
         return None, None, None, lost_info, error_reason
-
-    uid_str = str(uid) # Ensure UID is string for API call
-
+    
+    if not password:
+        error_reason = "Missing 'password'"
+        lost_info = {**original_account_info, "error_reason": error_reason}
+        return None, None, None, lost_info, error_reason
+    
+    uid_str = str(uid)
+    
     async with semaphore:
-        # Construct URL carefully, ensuring proper encoding (aiohttp handles this)
         params = {'uid': uid_str, 'password': password, 'key': API_KEY}
-        try:
-            # Increased timeout slightly for potentially slower API responses
-            async with session.get(API_BASE_URL, params=params, timeout=aiohttp.ClientTimeout(total=60)) as response:
-                response_text = await response.text()
-
-                if 200 <= response.status < 300:
-                    try:
-                        result = json.loads(response_text)
-                        # Check structure more carefully
-                        if isinstance(result, dict) and result.get('token'):
-                            token = result['token']
-                            # Region is optional but useful
-                            region = result.get('region') # Can be None
-                            logger.info(f"Success: Token received for UID: {uid_str} (Region: {region})")
-                            # Return original account info for working list
-                            return token, region, original_account_info, None, None
-                        else:
-                            err_msg = "API OK but invalid response format or empty token"
-                            logger.warning(f"{err_msg} for UID: {uid_str}. Response: {response_text[:200]}")
-                            lost_info = {**original_account_info, "error_reason": err_msg}
-                            return None, None, None, lost_info, err_msg
-                    except json.JSONDecodeError:
-                        err_msg = f"API OK ({response.status}) but Non-JSON response"
-                        logger.error(f"{err_msg} for UID: {uid_str}. Response: {response_text[:200]}")
-                        lost_info = {**original_account_info, "error_reason": err_msg}
-                        return None, None, None, lost_info, err_msg
-                    except Exception as e: # Catch potential errors during result processing
-                         err_msg = f"API OK ({response.status}) but response parsing error: {e}"
-                         logger.error(f"{err_msg} for UID: {uid_str}", exc_info=True)
-                         lost_info = {**original_account_info, "error_reason": err_msg}
-                         return None, None, None, lost_info, err_msg
-
-                else: # Handle non-2xx status codes
-                    # Attempt to extract a more meaningful error from API response
-                    error_detail = f"API Error ({response.status})"
-                    try:
-                        error_json = json.loads(response_text)
-                        if isinstance(error_json, dict):
-                            # Look for common error message keys
-                            msg = error_json.get('message') or error_json.get('error') or error_json.get('detail')
-                            if msg and isinstance(msg, str):
-                                error_detail += f": {msg[:100]}" # Limit length
-                    except (json.JSONDecodeError, TypeError): pass # Ignore if response isn't useful JSON
-
-                    logger.warning(f"API Error for UID: {uid_str}. Status: {response.status}. Detail: {error_detail}. Raw Response: {response_text[:200]}")
-                    lost_info = {**original_account_info, "error_reason": error_detail}
-                    return None, None, None, lost_info, error_detail
-
-        except asyncio.TimeoutError:
-             logger.warning(f"Timeout processing API request for UID: {uid_str}")
-             error_reason = "Request Timeout"
-             lost_info = {**original_account_info, "error_reason": error_reason}
-             return None, None, None, lost_info, error_reason
-        except aiohttp.ClientConnectorError as e:
-             # More specific logging for network errors
-             logger.error(f"Network Connection Error processing UID {uid_str}: {e}")
-             error_reason = f"Network Error: {e}"
-             lost_info = {**original_account_info, "error_reason": error_reason}
-             return None, None, None, lost_info, error_reason
-        except aiohttp.ClientError as e:
-             # Catch other potential client errors
-             logger.error(f"AIOHTTP Client Error processing UID {uid_str}: {e}")
-             error_reason = f"HTTP Client Error: {e}"
-             lost_info = {**original_account_info, "error_reason": error_reason}
-             return None, None, None, lost_info, error_reason
-
-        # General catch-all for unexpected issues during the request
-        except Exception as e:
-             logger.error(f"Unexpected error processing UID {uid_str}: {e}", exc_info=True)
-             error_reason = f"Unexpected Processing Error: {e}"
-             lost_info = {**original_account_info, "error_reason": error_reason}
-             return None, None, None, lost_info, error_reason
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                async with session.get(API_BASE_URL, params=params, timeout=aiohttp.ClientTimeout(total=60)) as response:
+                    response_text = await response.text()
+                    
+                    if 200 <= response.status < 300:
+                        try:
+                            result = json.loads(response_text)
+                            if isinstance(result, dict) and result.get('token'):
+                                token = result['token']
+                                region = result.get('region')
+                                logger.info(f"Success: Token received for UID: {uid_str} (Region: {region}) on attempt {attempt}")
+                                return token, region, original_account_info, None, None
+                            else:
+                                err_msg = f"API OK but invalid response format or empty token (attempt {attempt})"
+                                logger.warning(f"{err_msg} for UID: {uid_str}. Response: {response_text[:200]}")
+                                if attempt == max_retries:
+                                    lost_info = {**original_account_info, "error_reason": err_msg}
+                                    return None, None, None, lost_info, err_msg
+                                # Continue to next attempt
+                                await asyncio.sleep(1 * attempt)  # Exponential backoff
+                                continue
+                        except json.JSONDecodeError:
+                            err_msg = f"API OK ({response.status}) but Non-JSON response (attempt {attempt})"
+                            logger.error(f"{err_msg} for UID: {uid_str}. Response: {response_text[:200]}")
+                            if attempt == max_retries:
+                                lost_info = {**original_account_info, "error_reason": err_msg}
+                                return None, None, None, lost_info, err_msg
+                            await asyncio.sleep(1 * attempt)
+                            continue
+                        except Exception as e:
+                            err_msg = f"API OK ({response.status}) but response parsing error (attempt {attempt}): {e}"
+                            logger.error(f"{err_msg} for UID: {uid_str}", exc_info=True)
+                            if attempt == max_retries:
+                                lost_info = {**original_account_info, "error_reason": err_msg}
+                                return None, None, None, lost_info, err_msg
+                            await asyncio.sleep(1 * attempt)
+                            continue
+                    else:
+                        error_detail = f"API Error ({response.status}) (attempt {attempt})"
+                        try:
+                            error_json = json.loads(response_text)
+                            if isinstance(error_json, dict):
+                                msg = error_json.get('message') or error_json.get('error') or error_json.get('detail')
+                                if msg and isinstance(msg, str):
+                                    error_detail += f": {msg[:100]}"
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                        
+                        logger.warning(f"API Error for UID: {uid_str}. Status: {response.status}. Detail: {error_detail}. Attempt: {attempt}")
+                        if attempt == max_retries:
+                            lost_info = {**original_account_info, "error_reason": error_detail}
+                            return None, None, None, lost_info, error_detail
+                        await asyncio.sleep(2 * attempt)
+                        continue
+                        
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout processing API request for UID: {uid_str} (attempt {attempt})")
+                if attempt == max_retries:
+                    error_reason = f"Request Timeout after {max_retries} attempts"
+                    lost_info = {**original_account_info, "error_reason": error_reason}
+                    return None, None, None, lost_info, error_reason
+                await asyncio.sleep(2 * attempt)
+                continue
+                
+            except aiohttp.ClientConnectorError as e:
+                logger.error(f"Network Connection Error processing UID {uid_str} (attempt {attempt}): {e}")
+                if attempt == max_retries:
+                    error_reason = f"Network Error: {e} after {max_retries} attempts"
+                    lost_info = {**original_account_info, "error_reason": error_reason}
+                    return None, None, None, lost_info, error_reason
+                await asyncio.sleep(3 * attempt)
+                continue
+                
+            except aiohttp.ClientError as e:
+                logger.error(f"AIOHTTP Client Error processing UID {uid_str} (attempt {attempt}): {e}")
+                if attempt == max_retries:
+                    error_reason = f"HTTP Client Error: {e} after {max_retries} attempts"
+                    lost_info = {**original_account_info, "error_reason": error_reason}
+                    return None, None, None, lost_info, error_reason
+                await asyncio.sleep(2 * attempt)
+                continue
+                
+            except Exception as e:
+                logger.error(f"Unexpected error processing UID {uid_str} (attempt {attempt}): {e}", exc_info=True)
+                if attempt == max_retries:
+                    error_reason = f"Unexpected Processing Error: {e} after {max_retries} attempts"
+                    lost_info = {**original_account_info, "error_reason": error_reason}
+                    return None, None, None, lost_info, error_reason
+                await asyncio.sleep(2 * attempt)
+                continue
+    
+    # This should not be reached, but just in case
+    error_reason = f"Failed after {max_retries} attempts"
+    lost_info = {**original_account_info, "error_reason": error_reason}
+    return None, None, None, lost_info, error_reason
 
 async def handle_document(update: Update, context: CallbackContext) -> None:
     """Handle incoming JSON documents OR files sent after /setfile."""
@@ -3050,7 +3073,6 @@ async def process_single_schedule(bot, user_id: int, schedule_name: str, schedul
         if errors_summary:
              # Show top 1-2 errors in notification briefly
              top_errors = sorted(errors_summary.items(), key=lambda item: item[1], reverse=True)
-             # ******** CORRECTED VARIABLE NAME ********
              error_snippets = []
              for err_msg, count in top_errors[:2]:
                  error_snippets.append(f"`{escape(err_msg)}` ({count})")
@@ -3166,9 +3188,6 @@ async def update_schedule_status(bot, status_msg_obj, notify_parts: list, new_st
         if notify_parts[1] != "...": notify_parts.insert(1, "...")
 
     message_text = "\n".join(notify_parts)
-    # ******** CORRECTED: REMOVED reply_markup from edit *********
-    # Reply keyboard should not be attached when editing.
-    # final_markup = main_reply_markup if is_final else None # <-- REMOVED
 
     try:
         await bot.edit_message_text(
@@ -3529,5 +3548,3 @@ async def admin_panel(update: Update, context: CallbackContext):
         "👑 ADMIN CONTROL PANEL",
         reply_markup=ADMIN_MENU
     )
-
-# ===============================================================================
