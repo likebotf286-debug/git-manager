@@ -1,4 +1,4 @@
-# (DPX_ARMY_FF_01) Thank you from me to the haters
+# (DPX_ARMY_FF_01) Thank you from me to the haters.txt
 import os
 import json
 import aiohttp
@@ -8,7 +8,7 @@ import logging
 import traceback
 import base64
 import re
-import shutil # Added for file copying
+import shutil
 from datetime import datetime, timedelta, timezone
 from html import escape
 from collections import defaultdict
@@ -22,7 +22,6 @@ from telegram.ext import (
     filters,
     CallbackContext,
     ContextTypes,
-    # ConversationHandler, # Not using complex ConversationHandler for now
 )
 from telegram.constants import ParseMode
 from telegram.error import TelegramError, Forbidden, BadRequest
@@ -34,42 +33,38 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Essential: Get Bot Token
-TOKEN = os.getenv('8738964867:AAHK1Rv19hEvCdpZN6R1dUBc8yqxYjSBKvk') # Prefer .env
-if not TOKEN or TOKEN == "8738964867:AAHK1Rv19hEvCdpZN6R1dUBc8yqxYjSBKvk": # Check if token is missing or placeholder
-    # !!! Replace with your actual bot token if not using .env !!!
-    TOKEN = "8738964867:AAHK1Rv19hEvCdpZN6R1dUBc8yqxYjSBKvk" # FALLBACK - Highly recommended to use .env
+TOKEN = os.getenv('8738964867:AAHK1Rv19hEvCdpZN6R1dUBc8yqxYjSBKvk')
+if not TOKEN or TOKEN == "8738964867:AAHK1Rv19hEvCdpZN6R1dUBc8yqxYjSBKvk":
+    TOKEN = "8738964867:AAHK1Rv19hEvCdpZN6R1dUBc8yqxYjSBKvk"
 
-# Optional: API Configuration
-API_BASE_URL = os.getenv('JWT_API_URL', 'https://frexy-jwt-gen.vercel.app/token')#ƊƠƝƬ ƇӇƛƝƓЄ ƠƬӇЄƦƜƖƧЄ ЄƦƦƠƦ
+API_BASE_URL = os.getenv('JWT_API_URL', 'https://frexy-jwt-gen.vercel.app/token')
 API_KEY = os.getenv('JWT_API_KEY', '')
 
-# Optional: Bot Settings
-MAX_FILE_SIZE = int(os.getenv('MAX_FILE_SIZE', 5 * 1024 * 1024))  # 5MB default
-ADMIN_ID = int(os.getenv('ADMIN_ID', 6417430059)) # Default to 0 (disabled) if not set or invalid
-# Check and warn if ADMIN_ID is 0 but commands are expected
+MAX_FILE_SIZE = int(os.getenv('MAX_FILE_SIZE', 5 * 1024 * 1024))
+ADMIN_ID = int(os.getenv('ADMIN_ID', 6417430059))
 if ADMIN_ID == 6417430059:
-    print("WARNING: ADMIN_ID environment variable is not set, invalid, or 0. Admin commands (/vip, /broadcast) and error forwarding will be disabled.")
-MAX_CONCURRENT_REQUESTS = int(os.getenv('MAX_CONCURRENT_REQUESTS', 8)) # Limit concurrent API requests
-ADMIN_CONTACT_LINK = os.getenv('ADMIN_CONTACT_LINK', 'https://t.me/Frexy1only') # Default admin contact link
-AUTO_PROCESS_CHECK_INTERVAL = int(os.getenv('AUTO_PROCESS_CHECK_INTERVAL', 120)) # Seconds between scheduler checks (min 60 recommended)
+    print("WARNING: ADMIN_ID environment variable is not set, invalid, or 0.")
+MAX_CONCURRENT_REQUESTS = int(os.getenv('MAX_CONCURRENT_REQUESTS', 8))
+ADMIN_CONTACT_LINK = os.getenv('ADMIN_CONTACT_LINK', 'https://t.me/Frexy1only')
+AUTO_PROCESS_CHECK_INTERVAL = int(os.getenv('AUTO_PROCESS_CHECK_INTERVAL', 120))
 
 # --- File Paths ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, 'bot_data')
 TEMP_DIR = os.path.join(DATA_DIR, 'temp_files')
-SCHEDULED_FILES_DATA_DIR = os.path.join(DATA_DIR, 'scheduled_files_data') # New directory for storing scheduled files
+SCHEDULED_FILES_DATA_DIR = os.path.join(DATA_DIR, 'scheduled_files_data')
 
 VIP_FILE = os.path.join(DATA_DIR, 'vip_users.json')
 GITHUB_CONFIG_FILE = os.path.join(DATA_DIR, 'githubconfigs.json')
 KNOWN_USERS_FILE = os.path.join(DATA_DIR, 'knownusers.json')
-SCHEDULED_FILES_CONFIG = os.path.join(DATA_DIR, 'scheduledfiles.json') # New config file
+SCHEDULED_FILES_CONFIG = os.path.join(DATA_DIR, 'scheduledfiles.json')
+PROCESS_STATS_FILE = os.path.join(DATA_DIR, 'process_stats.json')  # NEW: For tracking stats
 
 # --- Logging Setup ---
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
-# Reduce log noise from libraries
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram.vendor.ptb_urllib3.urllib3").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -82,7 +77,6 @@ def format_time(seconds: float) -> str:
     try:
         seconds_int = int(seconds)
         if seconds_int < 60:
-            # Handle cases like 0 seconds correctly
             return f"{seconds_int}s" if seconds_int >= 0 else "0s"
         delta = timedelta(seconds=seconds_int)
         total_seconds = delta.total_seconds()
@@ -92,13 +86,10 @@ def format_time(seconds: float) -> str:
         parts = []
         if hours > 0: parts.append(f"{int(hours)}h")
         if minutes > 0 or (hours > 0 and seconds > 0): parts.append(f"{int(minutes)}m")
-        # Show seconds if it's the only unit or if there are minutes/hours
         if seconds > 0 or (not parts and total_seconds >=0): parts.append(f"{int(seconds)}s")
 
-        if not parts: return "0s" # Should be caught above, but safety
-
+        if not parts: return "0s"
         return " ".join(parts).strip()
-
     except (OverflowError, ValueError):
         return "Infinity"
     except Exception as e:
@@ -106,26 +97,17 @@ def format_time(seconds: float) -> str:
         return "Format Error"
 
 def sanitize_filename(name: str) -> str:
-    """Sanitizes a string to be used as part of a filename, ensuring it ends with .json."""
-    if not name: return 'Unknown.json' # Ensure it always has an extension for later logic
-    # Replace problematic characters with underscores
-    # Allow alphanumeric, underscores, hyphens, and periods
+    if not name: return 'Unknown.json'
     sanitized = re.sub(r'[^a-zA-Z0-9_.-]', '_', name)
-    # Remove leading/trailing underscores/periods/hyphens
     sanitized = sanitized.strip(' _.-')
-    # Ensure it ends with .json (case-insensitive check)
     if not sanitized.lower().endswith('.json'):
-        # Remove existing extension if present before adding .json
         base, _ = os.path.splitext(sanitized)
         sanitized = base + ".json"
-
-    # Ensure it's not empty after sanitization, default to 'Unknown.json'
     if not sanitized or sanitized == '.json':
         return 'Unknown.json'
     return sanitized
 
 def parse_interval(interval_str: str) -> int | None:
-    """Parses interval strings like '1h', '30m', '2d' into seconds."""
     match = re.match(r'^(\d+)\s*(m|h|d)$', interval_str.lower().strip())
     if not match:
         return None
@@ -136,22 +118,20 @@ def parse_interval(interval_str: str) -> int | None:
         return value * 3600
     elif unit == 'd':
         return value * 86400
-    return None # Should not happen with the regex
+    return None
 
 def load_json_data(filepath: str, default_value=None) -> dict | list:
-    """Loads JSON data from a file, returning default_value on error or if file not found."""
     if default_value is None:
         default_value = {}
     try:
         dir_name = os.path.dirname(filepath)
-        if dir_name: # Ensure directory exists before reading/writing
+        if dir_name:
             os.makedirs(dir_name, exist_ok=True)
-
         with open(filepath, 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
         logger.info(f"File {filepath} not found, creating with default value.")
-        save_json_data(filepath, default_value) # Create the file with default
+        save_json_data(filepath, default_value)
         return default_value
     except json.JSONDecodeError as e:
         logger.error(f"Error decoding JSON from {filepath}: {e}. Backing up corrupted file and returning default.")
@@ -162,7 +142,6 @@ def load_json_data(filepath: str, default_value=None) -> dict | list:
             logger.info(f"Backed up corrupted file to {corrupted_backup_path}")
         except OSError as ren_err:
              logger.error(f"Could not backup corrupted file {filepath}: {ren_err}")
-        # Create a new file with default value after backup attempt
         save_json_data(filepath, default_value)
         return default_value
     except Exception as e:
@@ -170,18 +149,13 @@ def load_json_data(filepath: str, default_value=None) -> dict | list:
         return default_value
 
 def save_json_data(filepath: str, data: dict | list) -> bool:
-    """Saves data to a JSON file using atomic write. Returns True on success, False on error."""
     temp_filepath = filepath + ".tmp"
     try:
         dir_name = os.path.dirname(filepath)
-        if dir_name: # Ensure directory exists before writing
+        if dir_name:
              os.makedirs(dir_name, exist_ok=True)
-
-        # Write to temporary file first
         with open(temp_filepath, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
-
-        # Atomically replace the original file with the temporary file
         os.replace(temp_filepath, filepath)
         logger.debug(f"Successfully saved data to {filepath}")
         return True
@@ -192,45 +166,97 @@ def save_json_data(filepath: str, data: dict | list) -> bool:
         logger.error(f"Unexpected error saving data to {filepath}: {e}", exc_info=True)
         return False
     finally:
-        # Ensure temporary file is removed if it still exists
         if os.path.exists(temp_filepath):
             try:
                 os.remove(temp_filepath)
             except OSError as e:
                 logger.warning(f"Could not remove temporary save file {temp_filepath}: {e}")
 
+# --- Process Stats Management (NEW) ---
+def load_process_stats() -> dict:
+    """Loads process statistics data."""
+    return load_json_data(PROCESS_STATS_FILE, {})
+
+def save_process_stats(data: dict) -> bool:
+    """Saves process statistics data."""
+    return save_json_data(PROCESS_STATS_FILE, data)
+
+def update_process_stats(user_id: int, schedule_name: str, total: int, success: int, failed: int, uploaded: bool = False) -> None:
+    """Updates the process statistics for a user's schedule."""
+    stats = load_process_stats()
+    user_id_str = str(user_id)
+    
+    if user_id_str not in stats:
+        stats[user_id_str] = {}
+    
+    if schedule_name not in stats[user_id_str]:
+        stats[user_id_str][schedule_name] = {
+            'total_processed': 0,
+            'total_success': 0,
+            'total_failed': 0,
+            'total_uploads': 0,
+            'last_run': None,
+            'history': []
+        }
+    
+    stats[user_id_str][schedule_name]['total_processed'] += total
+    stats[user_id_str][schedule_name]['total_success'] += success
+    stats[user_id_str][schedule_name]['total_failed'] += failed
+    if uploaded:
+        stats[user_id_str][schedule_name]['total_uploads'] += 1
+    stats[user_id_str][schedule_name]['last_run'] = datetime.now(timezone.utc).isoformat()
+    
+    # Keep only last 10 history entries
+    if len(stats[user_id_str][schedule_name]['history']) >= 10:
+        stats[user_id_str][schedule_name]['history'].pop(0)
+    
+    stats[user_id_str][schedule_name]['history'].append({
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'processed': total,
+        'success': success,
+        'failed': failed,
+        'uploaded': uploaded
+    })
+    
+    save_process_stats(stats)
+
+def get_process_stats(user_id: int, schedule_name: str = None) -> dict:
+    """Gets process statistics for a user, optionally for a specific schedule."""
+    stats = load_process_stats()
+    user_id_str = str(user_id)
+    
+    if user_id_str not in stats:
+        return {}
+    
+    if schedule_name:
+        return stats[user_id_str].get(schedule_name, {})
+    
+    return stats[user_id_str]
+
 # --- VIP User Management ---
 def load_vip_data() -> dict:
-    """Loads VIP user data from the JSON file."""
     return load_json_data(VIP_FILE, {})
 
 def save_vip_data(data: dict) -> bool:
-    """Saves VIP user data to the JSON file."""
     return save_json_data(VIP_FILE, data)
 
 def is_user_vip(user_id: int) -> bool:
-    """Checks if a user is currently a VIP by verifying their expiry date."""
     vip_data = load_vip_data()
     user_id_str = str(user_id)
     if user_id_str in vip_data and isinstance(vip_data.get(user_id_str), dict):
         try:
             expiry_iso = vip_data[user_id_str].get('expiry')
             if expiry_iso:
-                # Ensure correct timezone handling (assume stored is UTC)
                 expiry_dt = datetime.fromisoformat(expiry_iso.replace('Z', '+00:00'))
                 return expiry_dt > datetime.now(timezone.utc)
             else:
-                # Missing expiry field means not VIP
-                logger.debug(f"Missing or null 'expiry' for VIP user {user_id_str}. Assuming not VIP.")
                 return False
         except (ValueError, KeyError, TypeError) as e:
-            # Handle invalid data format gracefully
             logger.warning(f"Invalid or missing VIP data format for user {user_id_str}: {e}. Assuming not VIP.")
             return False
-    return False # Not in VIP data or data is not a dict
+    return False
 
 def get_vip_expiry(user_id: int) -> str | None:
-    """Gets the VIP expiry date string (YYYY-MM-DD HH:MM:SS UTC) if the user is currently VIP."""
     vip_data = load_vip_data()
     user_id_str = str(user_id)
     if user_id_str in vip_data and isinstance(vip_data.get(user_id_str), dict):
@@ -239,54 +265,43 @@ def get_vip_expiry(user_id: int) -> str | None:
             if expiry_iso:
                 expiry_dt = datetime.fromisoformat(expiry_iso.replace('Z', '+00:00'))
                 if expiry_dt > datetime.now(timezone.utc):
-                    # Format for display
                     return expiry_dt.strftime('%Y-%m-%d %H:%M:%S UTC')
                 else:
-                    return None # Expired
+                    return None
             else:
-                return None # No expiry date stored
+                return None
         except (ValueError, KeyError, TypeError):
-            # Handle case where data is corrupt
             return "Invalid Date Stored"
-    return None # User not VIP or data missing
+    return None
 
 # --- GitHub Config Management ---
 def load_github_configs() -> dict:
-    """Loads GitHub configuration data."""
     return load_json_data(GITHUB_CONFIG_FILE, {})
 
 def save_github_configs(data: dict) -> bool:
-    """Saves GitHub configuration data."""
     return save_json_data(GITHUB_CONFIG_FILE, data)
 
-# --- Known User Management (for Broadcast) ---
+# --- Known User Management ---
 def load_known_users() -> set:
-    """Loads known user IDs from the file into a set for efficient lookup."""
-    user_list = load_json_data(KNOWN_USERS_FILE, []) # Default to empty list
+    user_list = load_json_data(KNOWN_USERS_FILE, [])
     valid_users = set()
     if isinstance(user_list, list):
         for item in user_list:
-            # Convert valid string IDs to int, ensure non-zero
             if isinstance(item, int) and item != 0:
                 valid_users.add(item)
             elif isinstance(item, str) and item.isdigit() and int(item) != 0:
                  valid_users.add(int(item))
-            # Silently ignore invalid entries
     else:
-        # If file content is not a list, reset it
         logger.error(f"Loaded known users data from {KNOWN_USERS_FILE} is not a list. Resetting to empty list.")
-        save_known_users(set()) # Save an empty list back
+        save_known_users(set())
         return set()
     return valid_users
 
 def save_known_users(user_set: set) -> bool:
-    """Saves the set of user IDs back to the file as a sorted list of integers."""
-    # Ensure only valid integer IDs are saved, sorted
     int_user_list = sorted([int(uid) for uid in user_set if isinstance(uid, (int, str)) and str(uid).isdigit() and int(str(uid)) != 0])
     return save_json_data(KNOWN_USERS_FILE, int_user_list)
 
 def add_known_user(user_id: int) -> None:
-    """Adds a user ID to the known users file if not already present."""
     if not isinstance(user_id, int) or user_id == 0:
         logger.debug(f"Attempted to add invalid user ID: {user_id}. Skipping.")
         return
@@ -296,58 +311,58 @@ def add_known_user(user_id: int) -> None:
         if save_known_users(known_users):
              logger.info(f"Added new user {user_id} to known users list ({len(known_users)} total).")
         else:
-             # Log error but don't crash the bot
              logger.error(f"Failed attempt to save known users file after adding {user_id}.")
 
-# --- Scheduled File Management (NEW) ---
+# --- Scheduled File Management ---
 def load_scheduled_files() -> dict:
-    """Loads scheduled file configurations."""
-    # Structure: { "user_id_str": { "schedule_name.json": { schedule_details... }, ... }, ... }
     return load_json_data(SCHEDULED_FILES_CONFIG, {})
 
 def save_scheduled_files(data: dict) -> bool:
-    """Saves scheduled file configurations."""
     return save_json_data(SCHEDULED_FILES_CONFIG, data)
 
 # --- Command Buttons ---
 COMMAND_BUTTONS_LAYOUT = [
     ["Process File 📤", "Vip Status 📇"],
     ["Vip Shop 🛒", "GitHub Status 📊"],
-    ["Scheduled Files ⚙️", "Help 🆘"], # Added Scheduled Files button
-    ["Cancel ❌"]
+    ["Scheduled Files ⚙️", "Help 🆘"],
+    ["Schedule Stats 📈", "Cancel ❌"]  # NEW: Stats button
 ]
 main_reply_markup = ReplyKeyboardMarkup(COMMAND_BUTTONS_LAYOUT, resize_keyboard=True, one_time_keyboard=False)
 
 # --- Bot Command Handlers ---
 
 async def start(update: Update, context: CallbackContext) -> None:
-    """Send welcome message with buttons and record the user."""
     user = update.effective_user
     if not user: return
     add_known_user(user.id)
-    # Clear any potentially stuck pending schedule state on /start
     context.user_data.pop('pending_schedule', None)
-    context.user_data.pop('waiting_for_json', None) # Also clear manual state
+    context.user_data.pop('waiting_for_json', None)
 
-    username = escape(user.first_name) or "there" # Escape name for safety
+    username = escape(user.first_name) or "there"
 
     start_msg = f"👋 Hello {username}!\n\n"
     start_msg += "🚀 Welcome to the JWT Token Generator Bot!\n\n"
-    start_msg += "📁 Send me a JSON file containing account credentials like this:\n"
+    start_msg += "📁 Send me a JSON file OR a TXT file containing account credentials:\n"
+    start_msg += "• JSON format:\n"
     start_msg += "```json\n"
     start_msg += '[\n'
     start_msg += '    {"uid": "user1", "password": "pass1"},\n'
     start_msg += '    {"uid": "user2", "password": "pass2"}\n'
-    start_msg += '    // ... more entries ...\n'
     start_msg += ']\n'
     start_msg += "```\n"
-    start_msg += "✅ Successful tokens (Region summary included in message) will be saved to `jwt_token.json` AND `accounts{Region}.json` files.\n"
-    start_msg += "✔️ Working accounts (UID/Pass) will be saved to `working_account.json`\n"
-    start_msg += "❌ Failed/invalid entries (UID/Pass) will be saved to `lost_account.json`\n\n"
+    start_msg += "• TXT format (one per line):\n"
+    start_msg += "```\n"
+    start_msg += "user1:pass1\n"
+    start_msg += "user2:pass2\n"
+    start_msg += "```\n"
+    start_msg += "✅ Successful tokens will be saved to `jwt_token.json` AND `accounts{Region}.json` files.\n"
+    start_msg += "✔️ Working accounts saved to `working_account.json`\n"
+    start_msg += "❌ Failed/invalid entries saved to `lost_account.json`\n\n"
     start_msg += f"⚠️ Max file size: {MAX_FILE_SIZE / 1024 / 1024:.1f}MB\n\n"
     start_msg += "✨ *VIP Features:*\n"
     start_msg += "  - Auto-upload tokens to GitHub.\n"
-    start_msg += "  - Schedule files for automatic periodic processing and GitHub upload (`/setfile`).\n\n"
+    start_msg += "  - Schedule files for automatic periodic processing (`/setfile`).\n"
+    start_msg += "  - View detailed processing statistics (`/stats`).\n\n"
     start_msg += "Use /help or the Help button (🆘) to see all available commands."
 
     await update.message.reply_text(
@@ -357,12 +372,10 @@ async def start(update: Update, context: CallbackContext) -> None:
     )
 
 async def help_command(update: Update, context: CallbackContext) -> None:
-    """Send the detailed help message."""
     user = update.effective_user
     if user: add_known_user(user.id)
-    # Clear any pending schedule state on /help
     context.user_data.pop('pending_schedule', None)
-    context.user_data.pop('waiting_for_json', None) # Also clear manual state
+    context.user_data.pop('waiting_for_json', None)
 
     help_text = (
         "🆘 *Help Center*\n\n"
@@ -371,27 +384,28 @@ async def help_command(update: Update, context: CallbackContext) -> None:
         "  `/help` - Show this help message\n"
         "  `/vipstatus` - Check your current VIP status\n"
         "  `/vipshop` - View available VIP plans\n"
-        "  `/cancel` - Cancel the current operation (like setting a scheduled file)\n\n"
+        "  `/stats` - View processing statistics for your scheduled files\n"
+        "  `/cancel` - Cancel the current operation\n\n"
         "🔧 *VIP Commands (for VIP users only):*\n"
         "  `/setgithub <TOKEN> <owner/repo> <branch> <filename.json>` - Configure GitHub auto-upload.\n"
         "  `/mygithub` - Show your current GitHub configuration.\n"
-        "  `/setfile <Interval> <ScheduleName.json>` - Start scheduling a file for auto-processing (e.g., `/setfile 12h my_accounts.json`). Bot will ask for the file.\n"
-        "     *Interval format:* `Xm` (minutes), `Xh` (hours), `Xd` (days). Min interval: 5m.\n"
+        "  `/setfile <Interval> <ScheduleName.json>` - Start scheduling a file for auto-processing.\n"
         "  `/removefile <ScheduleName.json>` - Stop auto-processing for a scheduled file.\n"
         "  `/scheduledfiles` - List your currently scheduled files.\n\n"
-        "👑 *Admin Commands (Bot Admin only - requires ADMIN_ID to be set):*\n"
+        "👑 *Admin Commands (Bot Admin only):*\n"
         "  `/vip add <user_id> <days>` - Add/extend VIP\n"
-        "  `/vip remove <user_id>` - Remove VIP, GitHub config & ALL user's scheduled files\n"
+        "  `/vip remove <user_id>` - Remove VIP\n"
         "  `/vip list` - Show active VIP users\n"
         "  `/broadcast <message>` - Send a message to all known users\n\n"
         "📤 *Manual Processing:*\n"
-        "  1. Send a JSON file formatted with UID-password pairs.\n"
+        "  1. Send a JSON or TXT file with credentials.\n"
         "  2. The bot processes it and returns result files.\n"
         "  3. VIPs with GitHub config get `jwt_token.json` uploaded.\n\n"
         "⚙️ *Automatic Processing (VIP):*\n"
         "  1. Use `/setfile` to define a schedule and name.\n"
-        "  2. Send the corresponding JSON file when prompted.\n"
-        "  3. The bot will automatically process this file at the set interval and upload tokens to GitHub if configured.\n"
+        "  2. Send the corresponding file when prompted.\n"
+        "  3. The bot automatically processes the file every 7 hours (or your set interval).\n"
+        "  4. Use `/stats` to see processing statistics.\n"
     )
     await update.message.reply_text(
         help_text,
@@ -401,10 +415,9 @@ async def help_command(update: Update, context: CallbackContext) -> None:
     )
 
 async def vip_shop_command(update: Update, context: CallbackContext) -> None:
-    """Displays the VIP subscription plans and contact info."""
     user = update.effective_user
     if user: add_known_user(user.id)
-    context.user_data.pop('pending_schedule', None) # Clear state
+    context.user_data.pop('pending_schedule', None)
     context.user_data.pop('waiting_for_json', None)
 
     vip_shop_text = (
@@ -429,12 +442,11 @@ async def vip_shop_command(update: Update, context: CallbackContext) -> None:
     )
 
 async def vip_status_command(update: Update, context: CallbackContext) -> None:
-    """Shows the user's current VIP status and expiry date."""
     user = update.effective_user
     if not user: return
     user_id = user.id
     add_known_user(user_id)
-    context.user_data.pop('pending_schedule', None) # Clear state
+    context.user_data.pop('pending_schedule', None)
     context.user_data.pop('waiting_for_json', None)
 
     expiry_date_str = get_vip_expiry(user_id)
@@ -452,11 +464,94 @@ async def vip_status_command(update: Update, context: CallbackContext) -> None:
         reply_markup=main_reply_markup
     )
 
+async def stats_command(update: Update, context: CallbackContext) -> None:
+    """Shows processing statistics for the user's scheduled files."""
+    user = update.effective_user
+    if not user: return
+    user_id = user.id
+    add_known_user(user_id)
+    context.user_data.pop('pending_schedule', None)
+    context.user_data.pop('waiting_for_json', None)
+
+    if not is_user_vip(user.id):
+        await update.message.reply_text(
+            "ℹ️ Statistics are available for VIP users only. Use /vipshop to upgrade.",
+            reply_markup=main_reply_markup
+        )
+        return
+
+    stats = get_process_stats(user_id)
+    
+    if not stats:
+        await update.message.reply_text(
+            "ℹ️ No processing statistics available yet. Schedule a file using `/setfile` to start tracking.",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=main_reply_markup
+        )
+        return
+
+    message_parts = ["📊 *Your Processing Statistics*\n"]
+    
+    for schedule_name, data in stats.items():
+        if not isinstance(data, dict):
+            continue
+        
+        total_proc = data.get('total_processed', 0)
+        total_succ = data.get('total_success', 0)
+        total_fail = data.get('total_failed', 0)
+        total_uploads = data.get('total_uploads', 0)
+        last_run = data.get('last_run', 'Never')
+        
+        # Format last run time
+        last_run_display = "Never"
+        if last_run and last_run != 'Never':
+            try:
+                last_run_dt = datetime.fromisoformat(last_run.replace('Z', '+00:00'))
+                last_run_display = last_run_dt.strftime('%Y-%m-%d %H:%M UTC')
+            except (ValueError, TypeError):
+                last_run_display = "Invalid Date"
+        
+        message_parts.append(f"\n🏷️ **{escape(schedule_name)}**")
+        message_parts.append(f"   📊 Total Processed: `{total_proc}`")
+        message_parts.append(f"   ✅ Successful: `{total_succ}`")
+        message_parts.append(f"   ❌ Failed: `{total_fail}`")
+        message_parts.append(f"   📤 GitHub Uploads: `{total_uploads}`")
+        message_parts.append(f"   ⏱️ Last Run: `{last_run_display}`")
+        
+        # Show last 3 history entries
+        history = data.get('history', [])
+        if history:
+            message_parts.append(f"   📋 *Recent Runs:*")
+            for entry in history[-3:]:
+                if isinstance(entry, dict):
+                    ts = entry.get('timestamp', '')
+                    try:
+                        ts_dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                        ts_display = ts_dt.strftime('%m-%d %H:%M')
+                    except (ValueError, TypeError):
+                        ts_display = ts[:16] if ts else 'Unknown'
+                    proc = entry.get('processed', 0)
+                    succ = entry.get('success', 0)
+                    fail = entry.get('failed', 0)
+                    uploaded = '✅' if entry.get('uploaded', False) else '⬜'
+                    message_parts.append(f"      {ts_display} | {proc} total | ✅{succ} ❌{fail} {uploaded}")
+
+    message_parts.append("\n🔄 *Scheduled runs every 7 hours (420 minutes)*")
+    message_parts.append("Use `/removefile` to stop a schedule.")
+
+    final_message = "\n".join(message_parts)
+    
+    if len(final_message) > 4096:
+        await update.message.reply_text("Your statistics are too long to display fully. Showing the first part:")
+        await update.message.reply_text(final_message[:4050] + "...", parse_mode=ParseMode.MARKDOWN, reply_markup=main_reply_markup)
+    else:
+        await update.message.reply_text(final_message, parse_mode=ParseMode.MARKDOWN, reply_markup=main_reply_markup)
+
 async def cancel(update: Update, context: CallbackContext) -> None:
-    """Handles the /cancel command or Cancel button, clearing pending actions."""
     user = update.effective_user
     user_id = user.id if user else "Unknown"
     cleared_action = False
+    
     if context.user_data.pop('pending_schedule', None):
         cleared_action = True
         logger.info(f"User {user_id} cancelled pending file schedule setup.")
@@ -471,7 +566,6 @@ async def cancel(update: Update, context: CallbackContext) -> None:
             "Waiting for manual process file cancelled. Returning to main menu.",
             reply_markup=main_reply_markup
          )
-    # Add more elif blocks here if other states are introduced
 
     if not cleared_action:
         logger.info(f"User {user_id} used /cancel, but no active operation found.")
@@ -482,12 +576,28 @@ async def cancel(update: Update, context: CallbackContext) -> None:
 
 # --- File Processing Logic ---
 
+def parse_txt_content(content: str) -> list:
+    """Parse TXT content with uid:password format."""
+    accounts = []
+    lines = content.strip().split('\n')
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # Skip comments
+        if line.startswith('#'):
+            continue
+        # Try to parse uid:password
+        if ':' in line:
+            parts = line.split(':', 1)
+            if len(parts) == 2:
+                uid = parts[0].strip()
+                password = parts[1].strip()
+                if uid and password:
+                    accounts.append({"uid": uid, "password": password})
+    return accounts
+
 async def process_account(session: aiohttp.ClientSession, account: dict, semaphore: asyncio.Semaphore, max_retries: int = 6) -> tuple[str | None, str | None, dict | None, dict | None, str | None]:
-    """
-    Processes a single account via the API to get a JWT token and potentially region.
-    Will retry up to max_retries times if token generation fails.
-    Returns: tuple(token | None, region | None, working_account | None, lost_account | None, error_reason | None)
-    """
     uid = account.get("uid")
     password = account.get("password")
     original_account_info = account.copy()
@@ -526,8 +636,7 @@ async def process_account(session: aiohttp.ClientSession, account: dict, semapho
                                 if attempt == max_retries:
                                     lost_info = {**original_account_info, "error_reason": err_msg}
                                     return None, None, None, lost_info, err_msg
-                                # Continue to next attempt
-                                await asyncio.sleep(1 * attempt)  # Exponential backoff
+                                await asyncio.sleep(1 * attempt)
                                 continue
                         except json.JSONDecodeError:
                             err_msg = f"API OK ({response.status}) but Non-JSON response (attempt {attempt})"
@@ -599,13 +708,11 @@ async def process_account(session: aiohttp.ClientSession, account: dict, semapho
                 await asyncio.sleep(2 * attempt)
                 continue
     
-    # This should not be reached, but just in case
     error_reason = f"Failed after {max_retries} attempts"
     lost_info = {**original_account_info, "error_reason": error_reason}
     return None, None, None, lost_info, error_reason
 
 async def handle_document(update: Update, context: CallbackContext) -> None:
-    """Handle incoming JSON documents OR files sent after /setfile."""
     user = update.effective_user
     message = update.message
     if not user or not message: return
@@ -613,59 +720,60 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
     chat_id = message.chat_id
     add_known_user(user.id)
 
-    # --- Check if this file is for a pending schedule ---
+    # Check if this file is for a pending schedule
     if context.user_data.get('pending_schedule'):
         await handle_scheduled_file_upload(update, context)
-        return # Stop further processing here if it was for a schedule
+        return
 
-    # --- Standard Manual File Processing ---
+    # Standard Manual File Processing
     process_button_text = COMMAND_BUTTONS_LAYOUT[0][0]
     if message.text == process_button_text and not message.document:
         await message.reply_text(
-            "Okay, please send the JSON file now for manual processing.\n\n"
-            "Make sure it's a `.json` file containing a list like:\n"
+            "Okay, please send the JSON or TXT file now for manual processing.\n\n"
+            "📁 *JSON format:*\n"
             "```json\n"
             '[\n  {"uid": "user1", "password": "pass1"},\n  {"uid": "user2", "password": "pass2"}\n]\n'
+            "```\n"
+            "📄 *TXT format:*\n"
+            "```\n"
+            "user1:pass1\n"
+            "user2:pass2\n"
             "```",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=ReplyKeyboardRemove() # Temporarily remove keyboard
+            reply_markup=ReplyKeyboardRemove()
         )
-        context.user_data['waiting_for_json'] = True # State for manual processing
+        context.user_data['waiting_for_json'] = True
         return
 
     was_waiting_manual = context.user_data.pop('waiting_for_json', False)
     if was_waiting_manual and not message.document:
-         await message.reply_text("Looks like you sent text instead of a file for manual processing. Please send the JSON file or use /cancel.", reply_markup=main_reply_markup)
+         await message.reply_text("Looks like you sent text instead of a file for manual processing. Please send the file or use /cancel.", reply_markup=main_reply_markup)
          return
     elif not was_waiting_manual and not message.document:
-        # Ignore text messages that aren't commands or button clicks handled elsewhere
-        # unless it's part of a conversation (which we aren't using heavily here yet)
-        # This prevents the forward_to_admin from catching simple text replies.
-        # If more complex conversations are added, this might need adjustment.
-        # Check if it's a known button text before returning
         known_button_texts = {btn for row in COMMAND_BUTTONS_LAYOUT for btn in row}
         if message.text not in known_button_texts:
             logger.debug(f"Ignoring unhandled text message from user {user_id} in private chat.")
-            # Optionally, forward this to admin if desired using forward_to_admin logic
-            # await forward_to_admin(update, context) # Uncomment to forward these too
         return
 
     document = message.document
-    if not document: return # Should be caught above, but safety check
+    if not document: return
 
-    # --- File Validation ---
-    # Be stricter: Must have .json extension OR be application/json
-    is_json_mime = document.mime_type and document.mime_type.lower() == 'application/json'
+    # File Validation - Accept JSON or TXT
+    is_json = document.mime_type and document.mime_type.lower() == 'application/json'
     has_json_extension = document.file_name and document.file_name.lower().endswith('.json')
+    has_txt_extension = document.file_name and document.file_name.lower().endswith('.txt')
+    is_txt = document.mime_type and document.mime_type.lower() == 'text/plain'
 
-    if not is_json_mime and not has_json_extension:
-        await message.reply_text("❌ File does not appear to be a JSON file. Please ensure it has a `.json` extension or the correct `application/json` type.", reply_markup=main_reply_markup)
+    if not (is_json or has_json_extension or is_txt or has_txt_extension):
+        await message.reply_text(
+            "❌ File must be a `.json` or `.txt` file. Please send the correct file format.",
+            reply_markup=main_reply_markup
+        )
         return
 
     file_id = document.file_id
-    file_name = document.file_name or f"file_{file_id}.json" # Fallback filename
+    file_name = document.file_name or f"file_{file_id}.json"
 
-    # Check file size before download if possible
     if document.file_size and document.file_size > MAX_FILE_SIZE:
         await message.reply_text(
             f"⚠️ File is too large ({document.file_size / 1024 / 1024:.2f} MB). Max: {MAX_FILE_SIZE / 1024 / 1024:.1f} MB.",
@@ -673,11 +781,10 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
         )
         return
 
-    temp_file_path = os.path.join(TEMP_DIR, f'input_manual_{user_id}_{int(time.time())}.json')
+    temp_file_path = os.path.join(TEMP_DIR, f'input_manual_{user_id}_{int(time.time())}.{file_name.split(".")[-1] if "." in file_name else "json"}')
     progress_message = None
     accounts_data = []
 
-    # --- Download and Parse (Manual Processing) ---
     try:
         os.makedirs(TEMP_DIR, exist_ok=True)
         progress_message = await message.reply_text(f"⏳ Downloading `{escape(file_name)}` for manual processing...", parse_mode=ParseMode.MARKDOWN)
@@ -688,52 +795,56 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
 
         await context.bot.edit_message_text(
             chat_id=progress_message.chat_id, message_id=progress_message.message_id,
-            text=f"⏳ Downloaded `{escape(file_name)}`. Parsing JSON...", parse_mode=ParseMode.MARKDOWN
+            text=f"⏳ Downloaded `{escape(file_name)}`. Parsing content...", parse_mode=ParseMode.MARKDOWN
         )
 
-        # Check size *after* download to be absolutely sure
         actual_size = os.path.getsize(temp_file_path)
         if actual_size > MAX_FILE_SIZE:
-             raise ValueError(f"Downloaded file size ({actual_size / 1024 / 1024:.2f} MB) exceeds limit ({MAX_FILE_SIZE / 1024 / 1024:.1f} MB).")
+             raise ValueError(f"Downloaded file size ({actual_size / 1024 / 1024:.2f} MB) exceeds limit.")
 
-        with open(temp_file_path, 'r', encoding='utf-8') as f:
-            try:
-                accounts_data = json.load(f)
-            except json.JSONDecodeError as e:
-                # Provide more context for JSON errors
-                error_line_info = ""
-                # Check if lineno/colno are available (added in Python 3.5)
-                if hasattr(e, 'lineno') and hasattr(e, 'colno'):
-                    error_line_info = f" near line {e.lineno}, column {e.colno}"
-                error_msg = f"❌ Invalid JSON format in `{escape(file_name)}`{error_line_info}.\nError: `{escape(e.msg)}`.\nPlease check the file structure and syntax."
-                await context.bot.edit_message_text(
-                    chat_id=progress_message.chat_id, message_id=progress_message.message_id,
-                    text=error_msg, parse_mode=ParseMode.MARKDOWN # No reply_markup on edit
-                )
-                # Notify admin about invalid JSON uploads
-                if ADMIN_ID and ADMIN_ID != 0:
-                    try:
-                        await context.bot.send_message(ADMIN_ID, f"⚠️ User {user.id} uploaded invalid JSON for manual processing: `{escape(file_name)}`. Error: {escape(e.msg)}{error_line_info}")
-                    except Exception as forward_e:
-                        logger.error(f"Failed to forward invalid JSON notice to admin {ADMIN_ID}: {forward_e}")
-                return # Stop processing
+        # Parse based on file type
+        is_txt_file = file_name.lower().endswith('.txt') or (document.mime_type and 'text/plain' in document.mime_type)
+        
+        if is_txt_file:
+            # Parse TXT file
+            with open(temp_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            accounts_data = parse_txt_content(content)
+            if not accounts_data:
+                raise ValueError("No valid 'uid:password' pairs found in the TXT file. Make sure each line is formatted as 'uid:password'.")
+        else:
+            # Parse JSON file
+            with open(temp_file_path, 'r', encoding='utf-8') as f:
+                try:
+                    accounts_data = json.load(f)
+                except json.JSONDecodeError as e:
+                    error_line_info = ""
+                    if hasattr(e, 'lineno') and hasattr(e, 'colno'):
+                        error_line_info = f" near line {e.lineno}, column {e.colno}"
+                    error_msg = f"❌ Invalid JSON format in `{escape(file_name)}`{error_line_info}.\nError: `{escape(e.msg)}`.\nPlease check the file structure."
+                    await context.bot.edit_message_text(
+                        chat_id=progress_message.chat_id, message_id=progress_message.message_id,
+                        text=error_msg, parse_mode=ParseMode.MARKDOWN
+                    )
+                    if ADMIN_ID and ADMIN_ID != 0:
+                        try:
+                            await context.bot.send_message(ADMIN_ID, f"⚠️ User {user.id} uploaded invalid JSON for manual processing: `{escape(file_name)}`. Error: {escape(e.msg)}{error_line_info}")
+                        except Exception as forward_e:
+                            logger.error(f"Failed to forward invalid JSON notice to admin {ADMIN_ID}: {forward_e}")
+                    return
 
-        # Validate JSON structure (must be a list of dictionaries)
-        if not isinstance(accounts_data, list):
-            raise ValueError("Input JSON structure is invalid. It must be an array (a list `[...]`) of objects.")
-        if accounts_data and not all(isinstance(item, dict) for item in accounts_data):
-             # Find first non-dict item for better error message
-             first_bad_item = next((item for item in accounts_data if not isinstance(item, dict)), None)
-             raise ValueError(f"All items inside the JSON array must be objects (`{{...}}`). Found an item that is not an object: `{escape(str(first_bad_item)[:50])}`...")
+            if not isinstance(accounts_data, list):
+                raise ValueError("Input JSON structure is invalid. It must be an array (a list `[...]`) of objects.")
+            if accounts_data and not all(isinstance(item, dict) for item in accounts_data):
+                 first_bad_item = next((item for item in accounts_data if not isinstance(item, dict)), None)
+                 raise ValueError(f"All items inside the JSON array must be objects (`{{...}}`). Found an item that is not an object: `{escape(str(first_bad_item)[:50])}`...")
 
-    except ValueError as e: # Catch our specific validation errors
+    except ValueError as e:
         logger.warning(f"Input file validation failed for user {user_id} ('{file_name}'): {e}")
         error_text = f"❌ Validation Error: {escape(str(e))}"
         if progress_message:
-             # Edit message without reply_markup
              await context.bot.edit_message_text(chat_id=progress_message.chat_id, message_id=progress_message.message_id, text=error_text, parse_mode=ParseMode.MARKDOWN)
         else:
-             # Send new message with reply_markup
              await message.reply_text(error_text, reply_markup=main_reply_markup, parse_mode=ParseMode.MARKDOWN)
         return
     except TelegramError as e:
@@ -744,39 +855,35 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
                 await context.bot.edit_message_text(chat_id=progress_message.chat_id, message_id=progress_message.message_id, text=error_text, parse_mode=ParseMode.MARKDOWN)
             else:
                  await message.reply_text(error_text, reply_markup=main_reply_markup, parse_mode=ParseMode.MARKDOWN)
-        except TelegramError: # If we can't even edit/send the error
+        except TelegramError:
             logger.error(f"Could not inform user {user_id} about Telegram error: {e}")
         return
-    except Exception as e: # General catch-all
+    except Exception as e:
         logger.error(f"Error downloading or parsing file from user {user_id}: {e}", exc_info=True)
         error_text = f"⚠️ An unexpected error occurred while handling the file. Please try again or contact admin if it persists."
         if progress_message:
-            try: # Try editing the progress message first
-                await context.bot.edit_message_text(chat_id=progress_message.chat_id, message_id=progress_message.message_id, text=error_text) # Removed reply_markup
-            except TelegramError: # If that fails, send a new message
+            try:
+                await context.bot.edit_message_text(chat_id=progress_message.chat_id, message_id=progress_message.message_id, text=error_text)
+            except TelegramError:
                 await message.reply_text(error_text, reply_markup=main_reply_markup)
-        else: # If no progress message existed
+        else:
             await message.reply_text(error_text, reply_markup=main_reply_markup)
         return
     finally:
-        # Clean up the temporary downloaded file
         if os.path.exists(temp_file_path):
              try:
                  os.remove(temp_file_path)
              except OSError as e:
                  logger.warning(f"Could not remove temp input file {temp_file_path}: {e}")
 
-    # --- Process Accounts (Manual Processing) ---
     total_count = len(accounts_data)
     if total_count == 0:
-        # Edit the progress message
         await context.bot.edit_message_text(
             chat_id=progress_message.chat_id, message_id=progress_message.message_id,
-            text="ℹ️ The provided JSON file is empty or contains no valid account objects." # Removed reply_markup
+            text="ℹ️ The provided file is empty or contains no valid account entries."
         )
         return
 
-    # Edit progress message
     await context.bot.edit_message_text(
         chat_id=progress_message.chat_id, message_id=progress_message.message_id,
         text=f"🔄 *Processing {total_count} Accounts (Manual)*\nInitializing API calls (max {MAX_CONCURRENT_REQUESTS} parallel)...",
@@ -785,57 +892,48 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
 
     start_time = time.time()
     processed_count = 0
-    successful_tokens = [] # Store dicts like {"token": "...", "region": "..."}
+    successful_tokens = []
     working_accounts = []
     lost_accounts = []
-    errors_summary = defaultdict(int) # Use defaultdict for easier counting
+    errors_summary = defaultdict(int)
 
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
     async with aiohttp.ClientSession() as session:
         tasks = [process_account(session, account, semaphore) for account in accounts_data]
         last_update_time = time.time()
-        last_progress_text_sent = "" # Track last sent text to avoid spamming "not modified"
+        last_progress_text_sent = ""
 
         for future in asyncio.as_completed(tasks):
             try:
                 token, region, working_acc, lost_acc, error_reason = await future
             except Exception as task_err:
-                # Log errors from the task itself
                 logger.error(f"Error retrieving result from processing task: {task_err}", exc_info=True)
                 error_msg = f"Internal task error: {task_err}"
-                # Try to associate with an account if possible, otherwise generic lost entry
-                # Use lost_acc or working_acc if available from partial results before error
                 lost_account_info = lost_acc or working_acc or {"uid": "unknown", "password": "unknown"}
                 lost_accounts.append({**lost_account_info, "error_reason": error_msg})
                 errors_summary[error_msg] += 1
                 processed_count += 1
-                continue # Move to the next task result
+                continue
 
             processed_count += 1
 
-            # Process results
             if token and working_acc:
-                successful_tokens.append({"token": token, "region": region}) # Store region internally
+                successful_tokens.append({"token": token, "region": region})
                 working_accounts.append(working_acc)
             elif lost_acc:
                 lost_accounts.append(lost_acc)
                 reason = lost_acc.get("error_reason", "Unknown Failure")
-                # Simplify error reason for summary (e.g., group all 'API Error (404)' together)
                 simple_error = reason.split(':')[0].strip()
                 errors_summary[simple_error] += 1
             else:
-                 # This case should ideally not happen if process_account is robust
                  logger.error(f"Task completed unexpectedly. Token:{token}, Region:{region}, Work:{working_acc}, Lost:{lost_acc}, Err:{error_reason}")
                  generic_lost_info = {"account_info": lost_acc or working_acc or "unknown", "error_reason": "Processing function returned unexpected state"}
                  lost_accounts.append(generic_lost_info)
                  errors_summary["Processing function error"] += 1
 
-
-            # --- Progress Update ---
             current_time = time.time()
-            # Update progress every ~2 seconds OR every N items OR on the last item
-            update_frequency_items = max(10, min(100, total_count // 10)) # Scale frequency with total size
-            time_elapsed_since_last_update = current_time - last_update_time;
+            update_frequency_items = max(10, min(100, total_count // 10))
+            time_elapsed_since_last_update = current_time - last_update_time
 
             if time_elapsed_since_last_update > 2.0 or \
                (update_frequency_items > 0 and processed_count % update_frequency_items == 0) or \
@@ -844,41 +942,35 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
                 elapsed_time = current_time - start_time
                 percentage = (processed_count / total_count) * 100 if total_count > 0 else 0
 
-                # Estimate remaining time (more reliable after a few items)
-                estimated_remaining_time = -1 # Default to N/A
-                if processed_count > 5 and elapsed_time > 2: # Avoid division by zero or early estimates
+                estimated_remaining_time = -1
+                if processed_count > 5 and elapsed_time > 2:
                     try:
                         time_per_item = elapsed_time / processed_count
                         remaining_items = total_count - processed_count
                         estimated_remaining_time = time_per_item * remaining_items
-                    except ZeroDivisionError: pass # Should not happen with check above
+                    except ZeroDivisionError: pass
 
-                # Build progress text
                 progress_text = (
                     f"🔄 *Processing Accounts (Manual)...*\n\n"
                     f"Progress: {processed_count}/{total_count} ({percentage:.1f}%)\n"
                     f"✅ Success: {len(successful_tokens)} | ❌ Failed: {len(lost_accounts)}\n"
                     f"⏱️ Elapsed: {format_time(elapsed_time)}\n"
-                    # Format time handles None/<0 correctly
                     f"⏳ Est. Remaining: {format_time(estimated_remaining_time)}"
                 )
 
-                # Send update only if text changed to avoid "Message is not modified" errors
                 if last_progress_text_sent != progress_text:
                     try:
                         await context.bot.edit_message_text(
                             chat_id=progress_message.chat_id, message_id=progress_message.message_id,
                             text=progress_text, parse_mode=ParseMode.MARKDOWN
                         )
-                        last_progress_text_sent = progress_text # Update last sent text
-                        last_update_time = current_time # Reset timer
+                        last_progress_text_sent = progress_text
+                        last_update_time = current_time
                     except TelegramError as edit_err:
-                        # Ignore "not modified" errors, log others
                         if "Message is not modified" not in str(edit_err):
                              logger.warning(f"Could not edit progress message: {edit_err}")
-                        last_update_time = current_time # Still update time to prevent rapid retries
+                        last_update_time = current_time
 
-    # --- Final Summary & File Generation (Manual Processing) ---
     final_elapsed_time = time.time() - start_time
     escaped_file_name = escape(file_name)
     final_summary_parts = [
@@ -889,53 +981,43 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
         f"⏱️ Total Time Taken: {format_time(final_elapsed_time)}"
     ]
 
-    # Add Region Summary (uses successful_tokens which includes region)
-    successful_by_region = defaultdict(list) # Use defaultdict
+    # Region Summary
+    successful_by_region = defaultdict(list)
     if successful_tokens:
         for token_entry in successful_tokens:
             region = token_entry.get('region')
-            # Group null/empty regions under "Unknown Region"
             region_name = region if region else "Unknown Region"
-            successful_by_region[region_name].append(token_entry) # Append the whole entry
+            successful_by_region[region_name].append(token_entry)
 
         if successful_by_region:
             final_summary_parts.append("\n*Successful by Region:*")
-            # Sort regions alphabetically for consistent display
             sorted_regions = sorted(successful_by_region.keys())
             for region in sorted_regions:
                 count = len(successful_by_region[region])
                 final_summary_parts.append(f"- {escape(region)}: {count} tokens")
     else:
-        # Explicitly state if no successful tokens were found
         final_summary_parts.append("\n*Successful by Region:* 0 tokens found.")
 
-
-    # Add Error Summary
     if errors_summary:
         final_summary_parts.append("\n*Error Summary (Top 5 Types):*")
-        # Sort errors by count descending
         sorted_errors = sorted(errors_summary.items(), key=lambda item: item[1], reverse=True)
-        for msg, count in sorted_errors[:5]: # Show top 5
+        for msg, count in sorted_errors[:5]:
             final_summary_parts.append(f"- `{escape(msg)}`: {count} times")
         if len(sorted_errors) > 5:
             final_summary_parts.append(f"... and {len(sorted_errors) - 5} more error types.")
 
     final_summary = "\n".join(final_summary_parts)
 
-    # ******** FIX: Send final summary as NEW message with keyboard ********
     try:
-        # Delete the "Processing..." message first
         if progress_message:
             await context.bot.delete_message(chat_id=progress_message.chat_id, message_id=progress_message.message_id)
-        # Send the summary as a new message with the main keyboard
         await message.reply_text(
             final_summary,
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=main_reply_markup # Restore main keyboard here
+            reply_markup=main_reply_markup
         )
     except TelegramError as final_msg_err:
-        logger.error(f"Could not delete progress message or send final summary: {final_msg_err}. Progress message ID: {progress_message.message_id if progress_message else 'N/A'}")
-        # Fallback: Try sending summary again without deleting if delete failed
+        logger.error(f"Could not delete progress message or send final summary: {final_msg_err}")
         try:
             await message.reply_text(
                 final_summary,
@@ -945,54 +1027,44 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
         except Exception as fallback_err:
             logger.critical(f"Failed even fallback sending final summary for manual process: {fallback_err}")
 
-
-    # --- Generate and Send Output Files ---
-    # (This part remains the same, uses message.reply_document which is fine)
+    # Generate and Send Output Files
     file_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_files_to_send = [] # List of tuples: (temp_path, desired_filename_for_user)
-    cleanup_paths = [] # List of temp file paths to delete later
-    jwt_token_path_for_upload = None # Store path of the main JWT file for potential GitHub upload
+    output_files_to_send = []
+    cleanup_paths = []
+    jwt_token_path_for_upload = None
 
     try:
-        os.makedirs(TEMP_DIR, exist_ok=True) # Ensure temp dir exists
+        os.makedirs(TEMP_DIR, exist_ok=True)
 
-        # --- Create the main jwt_token.json file (tokens only) ---
         if successful_tokens:
-            # Use a unique temp name before saving
             jwt_token_path = os.path.join(TEMP_DIR, f'jwt_only_{user_id}_{file_timestamp}.json')
-            # Prepare list of ONLY tokens for the file
             tokens_only_list_for_file = [{"token": entry.get("token")} for entry in successful_tokens if entry.get("token")]
 
-            if tokens_only_list_for_file: # Only save if there are tokens
+            if tokens_only_list_for_file:
                 if save_json_data(jwt_token_path, tokens_only_list_for_file):
                     output_files_to_send.append((jwt_token_path, 'jwt_token.json'))
                     cleanup_paths.append(jwt_token_path)
-                    jwt_token_path_for_upload = jwt_token_path # This file is used for GitHub upload
+                    jwt_token_path_for_upload = jwt_token_path
                 else:
                     await message.reply_text("⚠️ Error saving main `jwt_token.json` to temporary storage.")
             else:
-                 # This case might occur if processing succeeded but yielded empty tokens somehow
                  logger.warning(f"User {user_id}: No valid tokens found to save in main jwt_token.json, despite {len(successful_tokens)} successes reported.")
 
-        # --- Create region-specific accounts{Region}.json files (tokens only) ---
-        if successful_by_region: # Use the defaultdict created for the summary
+        if successful_by_region:
             logger.info(f"Creating region-specific files for user {user_id}")
             for region_name, entries in successful_by_region.items():
-                 if not entries: continue # Skip empty regions (shouldn't happen with defaultdict)
+                 if not entries: continue
 
-                 # Prepare list of tokens ONLY for this region's file
                  region_tokens_only = [{"token": entry.get("token")} for entry in entries if entry.get("token")]
 
-                 if region_tokens_only: # Only create file if there are tokens for this region
-                     sanitized_region_name = sanitize_filename(region_name) # Sanitize region name for filename
-                     # Construct filename like accountsNA.json, accountsEU.json etc.
-                     # Remove the .json part added by sanitize_filename for this specific format
+                 if region_tokens_only:
+                     sanitized_region_name = sanitize_filename(region_name)
                      base_region_name = os.path.splitext(sanitized_region_name)[0]
                      region_file_name = f'accounts{base_region_name}.json'
 
-                     region_file_path = os.path.join(TEMP_DIR, f'{base_region_name}_{user_id}_{file_timestamp}.json') # Temp path
+                     region_file_path = os.path.join(TEMP_DIR, f'{base_region_name}_{user_id}_{file_timestamp}.json')
 
-                     if save_json_data(region_file_path, region_tokens_only): # Save region-specific tokens list
+                     if save_json_data(region_file_path, region_tokens_only):
                          output_files_to_send.append((region_file_path, region_file_name))
                          cleanup_paths.append(region_file_path)
                          logger.debug(f"Created region file: {region_file_name} with {len(region_tokens_only)} tokens.")
@@ -1002,8 +1074,6 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
                  else:
                      logger.debug(f"Region '{region_name}' had entries but no valid tokens found after filtering. Skipping region file.")
 
-
-        # --- Create working_account.json ---
         if working_accounts:
             working_account_path = os.path.join(TEMP_DIR, f'working_{user_id}_{file_timestamp}.json')
             if save_json_data(working_account_path, working_accounts):
@@ -1012,7 +1082,6 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
             else:
                 await message.reply_text("⚠️ Error saving `working_account.json` to temporary storage.")
 
-        # --- Create lost_account.json ---
         if lost_accounts:
             lost_account_path = os.path.join(TEMP_DIR, f'lost_{user_id}_{file_timestamp}.json')
             if save_json_data(lost_account_path, lost_accounts):
@@ -1021,10 +1090,8 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
             else:
                 await message.reply_text("⚠️ Error saving `lost_account.json` to temporary storage.")
 
-        # Send the generated files (main jwt_token.json, regional files, working, lost)
         if output_files_to_send:
             await message.reply_text(f"⬇️ Sending {len(output_files_to_send)} result file(s)...")
-            # Sort files alphabetically by name for consistent ordering
             output_files_to_send.sort(key=lambda x: x[1])
             for temp_path, desired_filename in output_files_to_send:
                  if not os.path.exists(temp_path):
@@ -1039,7 +1106,7 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
                              parse_mode=ParseMode.MARKDOWN
                          )
                      logger.info(f"Sent '{desired_filename}' to user {user_id} (manual process)")
-                     await asyncio.sleep(0.5) # Small delay between sending files to avoid rate limits
+                     await asyncio.sleep(0.5)
                  except TelegramError as send_err:
                      logger.error(f"Failed to send '{desired_filename}' to user {user_id}: {send_err}")
                      await message.reply_text(f"⚠️ Failed to send `{escape(desired_filename)}`: {escape(str(send_err))}", parse_mode=ParseMode.MARKDOWN)
@@ -1047,11 +1114,9 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
                      logger.error(f"Unexpected error sending '{desired_filename}' to {user_id}: {general_err}", exc_info=True)
                      await message.reply_text(f"⚠️ Unexpected error sending `{escape(desired_filename)}`.", parse_mode=ParseMode.MARKDOWN)
         elif total_count > 0:
-             # Inform user if processing happened but no files were generated
              await message.reply_text("ℹ️ No output files were generated (e.g., 0 successful tokens found or error saving files).", reply_markup=main_reply_markup)
 
-        # --- Trigger GitHub Auto-Upload if applicable ---
-        # This section uses `jwt_token_path_for_upload`, which points to the main jwt_token.json file
+        # Trigger GitHub Auto-Upload if applicable
         if is_user_vip(user_id) and jwt_token_path_for_upload:
             github_configs = load_github_configs()
             user_id_str = str(user_id)
@@ -1060,35 +1125,30 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
             if config and isinstance(config, dict):
                 logger.info(f"User {user_id} is VIP with GitHub config. Attempting auto-upload (manual process).")
                 if os.path.exists(jwt_token_path_for_upload):
-                    # Use the background-compatible upload function
                     await upload_to_github_background(
-                        context.bot, # Pass bot instance
-                        user_id,     # Pass user ID
+                        context.bot,
+                        user_id,
                         jwt_token_path_for_upload,
                         config
-                        )
+                    )
                 else:
-                     logger.error(f"JWT file {jwt_token_path_for_upload} missing for GitHub upload (user {user_id}). Logic error?")
+                     logger.error(f"JWT file {jwt_token_path_for_upload} missing for GitHub upload (user {user_id}).")
                      await message.reply_text("⚠️ Internal Error: Token file for GitHub upload not found.", disable_notification=True)
-            elif user_id_str in github_configs: # Config exists but is invalid
+            elif user_id_str in github_configs:
                  logger.error(f"GitHub config for user {user_id} is invalid (not a dict). Skipping upload.")
                  await message.reply_text("⚠️ GitHub upload skipped: Invalid config stored. Use /setgithub again.", disable_notification=True)
-            else: # VIP but no config set
+            else:
                  logger.info(f"User {user_id} is VIP but has no GitHub config.")
-                 await message.reply_text("ℹ️ GitHub auto-upload skipped: No GitHub configuration found. Use `/setgithub` command to enable.", disable_notification=True, parse_mode=ParseMode.MARKDOWN)
+                 await message.reply_text("ℹ️ GitHub auto-upload skipped: No GitHub configuration found. Use `/setgithub` to enable.", disable_notification=True, parse_mode=ParseMode.MARKDOWN)
         elif is_user_vip(user_id) and not jwt_token_path_for_upload and successful_tokens:
-             # VIP, successful tokens, but main file failed to save
              await message.reply_text("⚠️ GitHub upload skipped: Error occurred while saving the main token file locally.", disable_notification=True)
         elif is_user_vip(user_id) and not successful_tokens and total_count > 0:
-            # VIP, processed file, but no tokens generated
             await message.reply_text("ℹ️ GitHub auto-upload skipped: No successful tokens were generated in this batch.", disable_notification=True)
-
 
     except Exception as final_err:
         logger.error(f"Error during file generation/sending stage for user {user_id}: {final_err}", exc_info=True)
         await message.reply_text(f"⚠️ An error occurred while generating/sending result files: {escape(str(final_err))}", reply_markup=main_reply_markup)
     finally:
-        # Clean up all temporary files created during this process
         for path in cleanup_paths:
             if os.path.exists(path):
                 try:
@@ -1096,11 +1156,8 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
                 except OSError as e:
                     logger.warning(f"Could not remove temp output file {path}: {e}")
 
-        # Forward original input file to admin if configured
         if ADMIN_ID and ADMIN_ID != 0:
             try:
-                # Re-download the original file briefly to forward it (if temp was deleted)
-                # This is slightly inefficient but ensures the original is sent.
                 temp_forward_path = os.path.join(TEMP_DIR, f'forward_{user_id}_{message.message_id}.json')
                 try:
                     bot_file = await context.bot.get_file(file_id)
@@ -1115,14 +1172,12 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
                     logger.info(f"Forwarded original input file '{file_name}' from user {user_id} to admin {ADMIN_ID}")
                 except Exception as download_err:
                     logger.error(f"Could not re-download file for forwarding to admin: {download_err}")
-                    # Fallback: Try forwarding the message itself if download failed
                     await context.bot.forward_message(chat_id=ADMIN_ID, from_chat_id=message.chat_id, message_id=message.message_id)
                     await context.bot.send_message(ADMIN_ID, f"(Forwarded original message as file re-download failed for admin log)")
                 finally:
                      if os.path.exists(temp_forward_path):
                          try: os.remove(temp_forward_path)
                          except OSError: pass
-
             except Forbidden:
                 logger.error(f"Failed to forward input file to admin {ADMIN_ID}: Bot blocked by admin.")
             except TelegramError as e:
@@ -1132,32 +1187,25 @@ async def handle_document(update: Update, context: CallbackContext) -> None:
         else:
             logger.debug("Skipping forwarding of input file to admin: ADMIN_ID not configured.")
 
-# --- GitHub Auto-Upload Logic (Modified for Background Use) ---
+# --- GitHub Auto-Upload Logic ---
 
 async def upload_to_github_background(bot, user_id: int, local_token_file_path: str, config: dict) -> bool:
-    """
-    Uploads the content of the generated token file to GitHub.
-    Designed to be called from background tasks. Sends notifications directly to the user.
-    Returns True on success, False on failure.
-    """
-    notify_chat_id = user_id # Send notifications directly to the user
+    notify_chat_id = user_id
     upload_start_time = time.time()
     logger.info(f"Starting GitHub background upload for user {user_id}...")
     status_msg_obj = None
-    upload_success = False # Track success status
+    upload_success = False
 
     try:
-        # Send initial status message (without reply markup)
         status_msg_obj = await bot.send_message(notify_chat_id, "⚙️ GitHub Upload: Initializing...")
     except Forbidden:
         logger.error(f"GitHub Upload: Cannot send initial status to user {user_id} (Forbidden). Aborting upload.")
-        return False # Cannot notify user, abort
+        return False
     except TelegramError as e:
         logger.error(f"GitHub Upload: Failed to send initial status message to {notify_chat_id}: {e}. Aborting upload.")
-        return False # Cannot notify user, abort
+        return False
 
     try:
-        # --- Configuration Validation ---
         github_token = config.get('github_token')
         repo_full_name = config.get('github_repo')
         branch = config.get('github_branch')
@@ -1180,15 +1228,13 @@ async def upload_to_github_background(bot, user_id: int, local_token_file_path: 
         if validation_errors:
             error_str = ", ".join(validation_errors)
             logger.warning(f"Invalid GitHub config for user {user_id}. Errors: {error_str}.")
-            # Edit status message to show error (no reply markup)
             await bot.edit_message_text(
                 chat_id=notify_chat_id, message_id=status_msg_obj.message_id,
                 text=f"⚠️ GitHub upload skipped: Configuration invalid.\nErrors: {escape(error_str)}\nPlease use `/setgithub` again.",
                 parse_mode=ParseMode.MARKDOWN
             )
-            return False # Indicate failure
+            return False
 
-        # --- Read and Encode File Content ---
         try:
             with open(local_token_file_path, 'rb') as f:
                 content_bytes = f.read()
@@ -1198,7 +1244,7 @@ async def upload_to_github_background(bot, user_id: int, local_token_file_path: 
                     chat_id=notify_chat_id, message_id=status_msg_obj.message_id,
                     text="ℹ️ GitHub upload skipped: The generated token file was empty."
                 )
-                return True # Not an error, just nothing to upload
+                return True
             content_b64 = base64.b64encode(content_bytes).decode('utf-8')
         except FileNotFoundError:
              logger.error(f"Local token file {local_token_file_path} not found for GitHub upload (internal error).", exc_info=True)
@@ -1215,7 +1261,6 @@ async def upload_to_github_background(bot, user_id: int, local_token_file_path: 
             )
             return False
 
-        # --- GitHub API Interaction ---
         api_url_base = "https://api.github.com"
         clean_repo_name = repo_full_name.strip()
         clean_filename = target_filename.strip()
@@ -1235,7 +1280,6 @@ async def upload_to_github_background(bot, user_id: int, local_token_file_path: 
                 text=status_text, parse_mode=ParseMode.MARKDOWN
             )
 
-            # --- Get Current File SHA (to update existing file) ---
             try:
                 get_url = f"{contents_url}?ref={clean_branch}"
                 async with session.get(get_url, timeout=20) as response:
@@ -1249,15 +1293,14 @@ async def upload_to_github_background(bot, user_id: int, local_token_file_path: 
                              logger.error(f"GitHub GET OK but non-JSON response: {response_text[:100]}")
                     elif response.status == 404:
                         logger.info(f"GitHub: File '{clean_filename}' not found in branch '{clean_branch}'. Will create new file.")
-                        sha = None # Explicitly set to None for creation
-                    elif response.status == 401: # Unauthorized
+                        sha = None
+                    elif response.status == 401:
                         raise ConnectionRefusedError("GitHub Auth Error (401). Check token validity/permissions.")
-                    elif response.status == 403: # Forbidden (Rate limit, permissions?)
+                    elif response.status == 403:
                          try: error_msg = json.loads(response_text).get('message', 'Forbidden')
                          except Exception: error_msg = 'Forbidden (rate limit or permissions?)'
                          raise PermissionError(f"GitHub Access Error (403): {error_msg}")
                     else:
-                        # Log unexpected status but try PUT anyway
                         logger.warning(f"Unexpected status {response.status} checking GitHub file '{clean_filename}'. Response: {response_text[:200]}. Proceeding to PUT/create attempt.")
 
             except (asyncio.TimeoutError, aiohttp.ClientError, ConnectionRefusedError, PermissionError) as e:
@@ -1269,7 +1312,7 @@ async def upload_to_github_background(bot, user_id: int, local_token_file_path: 
                      parse_mode=ParseMode.MARKDOWN
                 )
                 return False
-            except Exception as e: # Catch other unexpected errors during GET
+            except Exception as e:
                 logger.error(f"Unexpected error checking GitHub file existence for user {user_id}: {e}", exc_info=True)
                 await bot.edit_message_text(
                     chat_id=notify_chat_id, message_id=status_msg_obj.message_id,
@@ -1277,7 +1320,6 @@ async def upload_to_github_background(bot, user_id: int, local_token_file_path: 
                 )
                 return False
 
-            # --- Create or Update File on GitHub ---
             action_verb = "Updating" if sha else "Creating"
             status_text = f"⚙️ GitHub Upload: {action_verb} `{escape(clean_filename)}` in branch `{escape(clean_branch)}`..."
             await bot.edit_message_text(
@@ -1291,21 +1333,19 @@ async def upload_to_github_background(bot, user_id: int, local_token_file_path: 
                 "content": content_b64,
                 "branch": clean_branch
             }
-            if sha: # Include SHA only if updating an existing file
+            if sha:
                 payload["sha"] = sha
 
             try:
-                # Use PUT request to create or update file
                 async with session.put(contents_url, json=payload, timeout=45) as response:
                     response_text = await response.text()
                     response_data = None
                     try: response_data = json.loads(response_text)
                     except json.JSONDecodeError: logger.warning(f"GitHub PUT non-JSON response ({response.status}): {response_text[:100]}")
 
-                    upload_duration = time.time() - upload_start_time;
+                    upload_duration = time.time() - upload_start_time
 
                     if response.status in (200, 201) and response_data and isinstance(response_data, dict):
-                        # Success!
                         commit_url = response_data.get('commit', {}).get('html_url', '')
                         file_url = response_data.get('content', {}).get('html_url', '')
                         action_done = "updated" if response.status == 200 else "created"
@@ -1316,7 +1356,6 @@ async def upload_to_github_background(bot, user_id: int, local_token_file_path: 
                             f"File: `{escape(clean_filename)}`",
                             f"Branch: `{escape(clean_branch)}`"
                         ]
-                        # Add direct links if available in response
                         links = []
                         if file_url and isinstance(file_url, str) and file_url.startswith("http"):
                             links.append(f"[View File]({file_url})")
@@ -1330,13 +1369,10 @@ async def upload_to_github_background(bot, user_id: int, local_token_file_path: 
                             disable_web_page_preview=True
                         )
                         logger.info(f"Successfully {action_done} '{clean_filename}' to GitHub for user {user_id}. Duration: {upload_duration:.2f}s")
-                        upload_success = True # Mark as successful
+                        upload_success = True
 
-                        # --- Update Last Upload Timestamp ---
-                        # Load fresh copy, update, save atomically
                         current_github_configs = load_github_configs()
                         user_id_str = str(user_id)
-                        # Check again if config exists and is valid before updating
                         if user_id_str in current_github_configs and isinstance(current_github_configs[user_id_str], dict):
                             current_github_configs[user_id_str]['last_upload'] = datetime.now(timezone.utc).isoformat()
                             if not save_github_configs(current_github_configs):
@@ -1345,13 +1381,12 @@ async def upload_to_github_background(bot, user_id: int, local_token_file_path: 
                             logger.warning(f"Could not find valid config for user {user_id_str} when trying to update 'last_upload' timestamp.")
 
                     else:
-                        # --- Handle GitHub PUT Error ---
                         error_msg_detail = f'Status {response.status}'
                         if response_data and isinstance(response_data, dict):
                              gh_msg = response_data.get('message', error_msg_detail)
                              doc_url = response_data.get('documentation_url')
                              error_msg_detail = f"{gh_msg}" + (f" (Docs: {doc_url})" if doc_url else "")
-                        elif response_text: # Use raw text if no useful JSON
+                        elif response_text:
                              error_msg_detail = response_text[:150]
 
                         final_error_message = f"⚠️ GitHub upload failed for `{escape(clean_repo_name)}`.\nStatus: {response.status}\nError: `{escape(error_msg_detail)}`"
@@ -1360,9 +1395,8 @@ async def upload_to_github_background(bot, user_id: int, local_token_file_path: 
                             chat_id=notify_chat_id, message_id=status_msg_obj.message_id,
                             text=final_error_message, parse_mode=ParseMode.MARKDOWN
                         )
-                        upload_success = False # Mark as failed
+                        upload_success = False
 
-            # Handle network/client errors during PUT
             except (asyncio.TimeoutError, aiohttp.ClientError) as e:
                  error_prefix = type(e).__name__
                  logger.error(f"{error_prefix} during GitHub PUT for user {user_id}: {e}")
@@ -1371,7 +1405,7 @@ async def upload_to_github_background(bot, user_id: int, local_token_file_path: 
                      text=f"⚠️ GitHub upload failed: {error_prefix} during upload: {escape(str(e))}"
                  )
                  upload_success = False
-            except Exception as e: # Catch other unexpected errors during PUT
+            except Exception as e:
                 logger.error(f"Unexpected error during GitHub PUT for user {user_id}: {e}", exc_info=True)
                 await bot.edit_message_text(
                     chat_id=notify_chat_id, message_id=status_msg_obj.message_id,
@@ -1379,39 +1413,39 @@ async def upload_to_github_background(bot, user_id: int, local_token_file_path: 
                 )
                 upload_success = False
 
-    except Exception as e: # General catch-all for the entire function
+    except Exception as e:
         logger.error(f"General GitHub background upload error for user {user_id}: {e}", exc_info=True)
-        if status_msg_obj: # Try to update the status message if it exists
+        if status_msg_obj:
             try:
                 await bot.edit_message_text(
                     chat_id=notify_chat_id, message_id=status_msg_obj.message_id,
                     text=f"⚠️ GitHub upload failed: An internal bot error occurred: {escape(str(e))}"
                 )
-            except TelegramError: # If editing fails, try sending a new message
+            except TelegramError:
                  logger.error(f"Could not edit final error status for GitHub upload user {user_id}. Sending new.")
                  try:
                      await bot.send_message(notify_chat_id, f"⚠️ GitHub upload failed due to an internal error: {escape(str(e))}")
                  except Exception:
                       logger.critical(f"Failed even to send a final error message for GitHub upload user {user_id} after status edit failure.")
-        else: # If the initial status message failed
+        else:
             logger.critical(f"Cannot update GitHub status_msg as it failed initially. General error: {e}")
-            try: # Try sending a direct error message
+            try:
                 await bot.send_message(notify_chat_id, f"⚠️ GitHub upload failed due to an internal error: {escape(str(e))}")
             except Exception:
                 logger.error("Failed even to send a final error message for GitHub upload after initial status failure.")
-        upload_success = False # Ensure failure is recorded
+        upload_success = False
 
     return upload_success
 
-# --- Direct GitHub Configuration Command ---
+# --- GitHub Configuration Command ---
+
 async def set_github_direct(update: Update, context: CallbackContext) -> None:
-    """Handles the /setgithub command where users provide all arguments directly."""
     user = update.effective_user
     message = update.message
     if not user or not message: return
     user_id = user.id
     add_known_user(user.id)
-    context.user_data.pop('pending_schedule', None) # Clear other states
+    context.user_data.pop('pending_schedule', None)
     context.user_data.pop('waiting_for_json', None)
 
     if not is_user_vip(user.id):
@@ -1429,7 +1463,7 @@ async def set_github_direct(update: Update, context: CallbackContext) -> None:
         "*Example:*\n"
         "`/setgithub ghp_YourToken123 YourGitHubUser/MyRepo main my_tokens.json`\n\n"
         "⚠️ *Security Warning:*\nYour GitHub token will be visible in your command message. "
-        "The bot will attempt to delete this message after saving, but *please manually delete it immediately* if the bot fails to do so, to protect your token."
+        "The bot will attempt to delete this message after saving, but *please manually delete it immediately* if the bot fails to do so."
     )
 
     if len(args) != 4:
@@ -1444,30 +1478,26 @@ async def set_github_direct(update: Update, context: CallbackContext) -> None:
     github_token, github_repo_raw, github_branch_raw, github_filename_raw = args
     user_id_str = str(user.id)
 
-    # --- Input Validation ---
     validation_errors = []
-    if not github_token or len(github_token) < 10: # Basic token check
+    if not github_token or len(github_token) < 10:
         validation_errors.append("GitHub Token seems missing or too short.")
 
-    # Validate Repo: owner/repo format, no spaces, no leading/trailing slashes
     github_repo = github_repo_raw.strip()
     if not github_repo or '/' not in github_repo or len(github_repo.split('/')) != 2 or not all(p.strip() for p in github_repo.split('/')) or github_repo.startswith('/') or github_repo.endswith('/') or ' ' in github_repo:
-        validation_errors.append("Invalid Repository format. Use `owner/repository_name` (no spaces or leading/trailing slashes).")
+        validation_errors.append("Invalid Repository format. Use `owner/repository_name`.")
 
-    # Validate Branch: no spaces, no leading/trailing slashes
     github_branch = github_branch_raw.strip()
     if not github_branch or ' ' in github_branch or github_branch.startswith('/') or github_branch.endswith('/'):
-        validation_errors.append("Invalid Branch name (no spaces or leading/trailing slashes).")
+        validation_errors.append("Invalid Branch name (no spaces or slashes).")
 
-    # Validate Filename: must end .json, no spaces, no leading slash
     github_filename = github_filename_raw.strip()
     if not github_filename or not github_filename.lower().endswith('.json') or github_filename.startswith('/') or ' ' in github_filename:
-        validation_errors.append("Invalid Filename. Must end with `.json`, contain no spaces, and not start with `/`.")
+        validation_errors.append("Invalid Filename. Must end with `.json`, no spaces, no leading slash.")
 
     if validation_errors:
         safe_errors = [escape(e) for e in validation_errors]
         error_message = "❌ Configuration validation failed:\n" + "\n".join(f"- {e}" for e in safe_errors)
-        error_message += f"\n\n{usage_text}" # Show usage again on error
+        error_message += f"\n\n{usage_text}"
         await message.reply_text(
             error_message,
             parse_mode=ParseMode.MARKDOWN,
@@ -1476,28 +1506,26 @@ async def set_github_direct(update: Update, context: CallbackContext) -> None:
         )
         return
 
-    # --- Save Configuration ---
     config_data = {
         'github_token': github_token,
         'github_repo': github_repo,
         'github_branch': github_branch,
         'github_filename': github_filename,
-        'last_upload': None, # Initialize last upload time
-        'config_set_on': datetime.now(timezone.utc).isoformat() # Record when set
+        'last_upload': None,
+        'config_set_on': datetime.now(timezone.utc).isoformat()
     }
     logger.info(f"Received valid GitHub config via /setgithub from VIP user {user_id_str}. Saving...")
 
     github_configs = load_github_configs()
-    github_configs[user_id_str] = config_data # Add or update config
+    github_configs[user_id_str] = config_data
 
     if save_github_configs(github_configs):
         logger.info(f"Successfully saved GitHub config for user {user_id_str}")
 
-        # Mask token for confirmation message
         masked_token = "****"
         if len(github_token) > 8:
             masked_token = github_token[:4] + "****" + github_token[-4:]
-        elif github_token: # Handle shorter tokens
+        elif github_token:
              masked_token = "****"
 
         safe_repo = escape(config_data['github_repo'])
@@ -1520,37 +1548,31 @@ async def set_github_direct(update: Update, context: CallbackContext) -> None:
             reply_markup=main_reply_markup
         )
 
-        # --- Attempt to Delete User's Command Message (Security) ---
         delete_successful = False
         try:
             await message.delete()
             delete_successful = True
             logger.info(f"Successfully deleted user's /setgithub command message for user {user_id_str}")
-            # Edit confirmation message to reflect deletion success
             await context.bot.edit_message_text(
                 chat_id=confirm_msg_obj.chat_id, message_id=confirm_msg_obj.message_id,
                 text=confirmation_message.replace("⏳ *Attempting to delete your command message containing the token for security...*",
                                                    "✅ Your command message containing the token has been deleted."),
                 parse_mode=ParseMode.MARKDOWN,
-                # No reply_markup here as we are editing
             )
         except TelegramError as e:
             logger.warning(f"Could not delete user's /setgithub command message for {user_id_str}: {e}. User needs to delete manually.")
-            # Edit confirmation message to warn user
             try:
                 await context.bot.edit_message_text(
                     chat_id=confirm_msg_obj.chat_id, message_id=confirm_msg_obj.message_id,
                     text=confirmation_message.replace("⏳ *Attempting to delete your command message containing the token for security...*",
                                                        "⚠️ *Could not automatically delete your command message! Please delete it manually NOW to protect your token.*"),
                     parse_mode=ParseMode.MARKDOWN,
-                    # No reply_markup here
                 )
             except TelegramError as edit_err:
-                 # If editing the warning fails, send a new message
                  logger.error(f"Failed to edit confirmation message to warn about manual deletion: {edit_err}")
                  await message.reply_text("⚠️ *IMPORTANT: Could not automatically delete your command message! Please delete the message containing your `/setgithub` command manually NOW to protect your token.*", parse_mode=ParseMode.MARKDOWN, reply_markup=main_reply_markup)
 
-    else: # Failed to save the config file
+    else:
         logger.error(f"Failed to save GitHub configuration file for user {user_id_str}")
         await message.reply_text(
             "❌ **Error:** Could not save the GitHub configuration due to a file system error. Please try again later or contact the admin.",
@@ -1559,13 +1581,12 @@ async def set_github_direct(update: Update, context: CallbackContext) -> None:
         )
 
 async def my_github_config(update: Update, context: CallbackContext) -> None:
-    """Shows the VIP user's current GitHub configuration (with masked token)."""
     user = update.effective_user
     message = update.message
     if not user or not message: return
     user_id = user.id
     add_known_user(user.id)
-    context.user_data.pop('pending_schedule', None) # Clear state
+    context.user_data.pop('pending_schedule', None)
     context.user_data.pop('waiting_for_json', None)
 
     if not is_user_vip(user.id):
@@ -1588,16 +1609,14 @@ async def my_github_config(update: Update, context: CallbackContext) -> None:
         )
         return
 
-    # Extract and mask token
     token = config.get('github_token', 'Not Set')
     masked_token = "Not Set"
     if isinstance(token, str) and token != 'Not Set':
         if len(token) > 8:
             masked_token = token[:4] + "****" + token[-4:]
-        elif token: # Handle short tokens
+        elif token:
             masked_token = "****"
 
-    # Escape details for safe display
     safe_repo = escape(config.get('github_repo', 'Not Set'))
     safe_branch = escape(config.get('github_branch', 'Not Set'))
     safe_filename = escape(config.get('github_filename', 'Not Set'))
@@ -1611,20 +1630,18 @@ async def my_github_config(update: Update, context: CallbackContext) -> None:
         f"• Token: `{safe_masked_token}` (Masked)"
     ]
 
-    # Add Last Upload time if available and valid
     last_upload_iso = config.get('last_upload')
     if last_upload_iso:
         try:
             last_upload_dt = datetime.fromisoformat(last_upload_iso.replace('Z', '+00:00'))
             last_upload_str = last_upload_dt.strftime('%Y-%m-%d %H:%M:%S UTC')
             message_parts.append(f"• Last Successful Upload: `{last_upload_str}`")
-        except (ValueError, TypeError): # Handle invalid date format
-            safe_iso_snippet = escape(str(last_upload_iso)[:19]) # Show snippet
+        except (ValueError, TypeError):
+            safe_iso_snippet = escape(str(last_upload_iso)[:19])
             message_parts.append(f"• Last Successful Upload: `Invalid Date Stored ({safe_iso_snippet}...)`")
-    else: # No upload recorded yet
+    else:
         message_parts.append("• Last Successful Upload: `Never`")
 
-    # Add Config Set time if available and valid
     config_set_on_iso = config.get('config_set_on')
     if config_set_on_iso:
          try:
@@ -1632,7 +1649,7 @@ async def my_github_config(update: Update, context: CallbackContext) -> None:
              config_set_str = config_set_dt.strftime('%Y-%m-%d %H:%M:%S UTC')
              message_parts.append(f"• Config Set/Updated: `{config_set_str}`")
          except (ValueError, TypeError):
-             pass # Ignore if this timestamp is invalid
+             pass
 
     message_parts.append("\nUse `/setgithub <TOKEN> ...` to update your configuration.")
 
@@ -1640,19 +1657,18 @@ async def my_github_config(update: Update, context: CallbackContext) -> None:
         "\n".join(message_parts),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=main_reply_markup,
-        disable_web_page_preview=True # Disable link previews for GitHub URLs
+        disable_web_page_preview=True
     )
 
-# --- Scheduled File Commands (NEW) ---
+# --- Scheduled File Commands ---
 
 async def set_scheduled_file_start(update: Update, context: CallbackContext) -> None:
-    """Starts the process of scheduling a file for automatic processing."""
     user = update.effective_user
     message = update.message
     if not user or not message: return
     user_id = user.id
     add_known_user(user.id)
-    context.user_data.pop('waiting_for_json', None) # Clear other state
+    context.user_data.pop('waiting_for_json', None)
 
     if not is_user_vip(user.id):
         await message.reply_text(
@@ -1667,8 +1683,8 @@ async def set_scheduled_file_start(update: Update, context: CallbackContext) -> 
         "*Usage:* `/setfile <Interval> <ScheduleName.json>`\n"
         "*Interval:* Number followed by `m` (minutes), `h` (hours), or `d` (days). Min interval: 5m.\n"
         "*ScheduleName:* A name for this schedule, ending in `.json`.\n\n"
-        "*Example:* `/setfile 12h my_main_accounts.json`\n\n"
-        "After using the command, send the corresponding JSON file."
+        "*Example:* `/setfile 7h my_main_accounts.json`\n\n"
+        "After using the command, send the corresponding JSON or TXT file."
     )
 
     if len(args) != 2:
@@ -1680,9 +1696,8 @@ async def set_scheduled_file_start(update: Update, context: CallbackContext) -> 
 
     interval_str, user_filename = args[0], args[1]
 
-    # Validate Interval
     interval_seconds = parse_interval(interval_str)
-    min_interval_seconds = 5 * 60 # Set a minimum interval (e.g., 5 minutes)
+    min_interval_seconds = 5 * 60
     if interval_seconds is None:
         await message.reply_text(
             f"❌ Invalid interval format: `{escape(interval_str)}`. Use formats like `30m`, `6h`, `1d`.\n\n{usage_text}",
@@ -1696,7 +1711,6 @@ async def set_scheduled_file_start(update: Update, context: CallbackContext) -> 
          )
          return
 
-    # Validate and Sanitize Filename
     if not user_filename.lower().endswith('.json'):
          await message.reply_text(
              f"❌ Schedule name must end with `.json`. You provided: `{escape(user_filename)}`.\n\n{usage_text}",
@@ -1704,58 +1718,57 @@ async def set_scheduled_file_start(update: Update, context: CallbackContext) -> 
          )
          return
 
-    sanitized_name = sanitize_filename(user_filename) # Use the robust sanitizer
-    if not sanitized_name or sanitized_name == '.json': # Extra check after sanitization
+    sanitized_name = sanitize_filename(user_filename)
+    if not sanitized_name or sanitized_name == '.json':
          await message.reply_text(
              f"❌ Invalid schedule name after sanitization: `{escape(user_filename)}` became `{escape(sanitized_name)}`.\nChoose a more descriptive name.",
              parse_mode=ParseMode.MARKDOWN, reply_markup=main_reply_markup
          )
          return
 
-    # Store pending schedule info and ask for file
     context.user_data['pending_schedule'] = {
         'interval_seconds': interval_seconds,
-        'schedule_name': sanitized_name, # Store the sanitized name used for keys/storage
-        'user_filename': user_filename # Store original user-provided name for messages
+        'schedule_name': sanitized_name,
+        'user_filename': user_filename
     }
 
     logger.info(f"User {user_id} initiated scheduling for '{sanitized_name}' with interval {interval_seconds}s. Waiting for file.")
     await message.reply_text(
         f"✅ Okay, schedule details accepted for `'{escape(user_filename)}'` "
         f"(Interval: {escape(interval_str)} = {format_time(interval_seconds)}).\n\n"
-        f"📎 **Now, please send the JSON file** you want to associate with this schedule.\n\n"
+        f"📎 **Now, please send the JSON or TXT file** you want to associate with this schedule.\n\n"
         f"Use /cancel to abort.",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=ReplyKeyboardRemove() # Remove main keyboard while waiting for file
+        reply_markup=ReplyKeyboardRemove()
     )
 
 async def handle_scheduled_file_upload(update: Update, context: CallbackContext) -> None:
-    """Handles the JSON file upload specifically for a pending schedule."""
     user = update.effective_user
     message = update.message
-    # This function assumes it's only called when context.user_data['pending_schedule'] exists.
     if not user or not message or not message.document:
         logger.warning(f"handle_scheduled_file_upload called without user/message/document for user {user.id if user else 'Unknown'}")
-        if context.user_data.get('pending_schedule'): # If state exists but message is wrong type
-             # Send new message with main keyboard
-             await message.reply_text("Please send the JSON *file* to schedule, not text. Or use /cancel.", reply_markup=main_reply_markup)
+        if context.user_data.get('pending_schedule'):
+             await message.reply_text("Please send the JSON or TXT *file* to schedule, not text. Or use /cancel.", reply_markup=main_reply_markup)
         return
 
     user_id = user.id
-    pending_schedule = context.user_data['pending_schedule'] # Already checked it exists
+    pending_schedule = context.user_data['pending_schedule']
     schedule_name = pending_schedule['schedule_name']
-    user_filename = pending_schedule['user_filename'] # Original name for messages
+    user_filename = pending_schedule['user_filename']
     interval_seconds = pending_schedule['interval_seconds']
 
     document = message.document
-    original_telegram_filename = document.file_name or f"file_{document.file_id}.json" # Get TG filename
+    original_telegram_filename = document.file_name or f"file_{document.file_id}.json"
 
-    # --- File Validation (again, for the uploaded file) ---
-    is_json_mime = document.mime_type and document.mime_type.lower() == 'application/json'
-    has_json_extension = original_telegram_filename and original_telegram_filename.lower().endswith('.json')
-    if not is_json_mime and not has_json_extension:
-        await message.reply_text(f"❌ The file you sent (`{escape(original_telegram_filename)}`) doesn't seem to be a JSON file (.json). Schedule cancelled.", reply_markup=main_reply_markup)
-        context.user_data.pop('pending_schedule', None) # Clear state on error
+    # Accept JSON or TXT
+    is_json = document.mime_type and document.mime_type.lower() == 'application/json'
+    has_json_extension = original_telegram_filename.lower().endswith('.json')
+    is_txt = document.mime_type and document.mime_type.lower() == 'text/plain'
+    has_txt_extension = original_telegram_filename.lower().endswith('.txt')
+
+    if not (is_json or has_json_extension or is_txt or has_txt_extension):
+        await message.reply_text(f"❌ The file you sent (`{escape(original_telegram_filename)}`) must be a JSON or TXT file. Schedule cancelled.", reply_markup=main_reply_markup)
+        context.user_data.pop('pending_schedule', None)
         return
 
     if document.file_size and document.file_size > MAX_FILE_SIZE:
@@ -1763,12 +1776,10 @@ async def handle_scheduled_file_upload(update: Update, context: CallbackContext)
             f"⚠️ File is too large ({document.file_size / 1024 / 1024:.2f} MB). Max: {MAX_FILE_SIZE / 1024 / 1024:.1f} MB. Schedule cancelled.",
             reply_markup=main_reply_markup
         )
-        context.user_data.pop('pending_schedule', None) # Clear state on error
+        context.user_data.pop('pending_schedule', None)
         return
 
-    # --- Download and Store Persistently ---
     temp_download_path = os.path.join(TEMP_DIR, f'schedule_down_{user_id}_{schedule_name}_{int(time.time())}.json')
-    # Use user_id and sanitized schedule_name for persistent storage to avoid clashes
     persistent_file_path = os.path.join(SCHEDULED_FILES_DATA_DIR, f"{user_id}_{schedule_name}")
     progress_msg = None
 
@@ -1782,53 +1793,48 @@ async def handle_scheduled_file_upload(update: Update, context: CallbackContext)
         await bot_file.download_to_drive(temp_download_path)
         logger.info(f"Downloaded file for schedule '{schedule_name}' (user {user_id}) to temp path: {temp_download_path}")
 
-        # Verify downloaded size again
         actual_size = os.path.getsize(temp_download_path)
         if actual_size > MAX_FILE_SIZE:
              raise ValueError(f"Downloaded file size ({actual_size / 1024 / 1024:.2f} MB) exceeds limit.")
 
-        # Basic JSON validation before storing persistently
-        try:
+        # Validate file content based on type
+        is_txt_file = original_telegram_filename.lower().endswith('.txt') or (document.mime_type and 'text/plain' in document.mime_type)
+        
+        if is_txt_file:
+            with open(temp_download_path, 'r', encoding='utf-8', errors='ignore') as f_check:
+                content = f_check.read()
+                accounts = parse_txt_content(content)
+                if not accounts:
+                    raise ValueError("No valid 'uid:password' pairs found in the TXT file.")
+            logger.info(f"TXT validation passed for scheduled file '{schedule_name}' (user {user_id}). Found {len(accounts)} accounts.")
+        else:
             with open(temp_download_path, 'r', encoding='utf-8') as f_check:
-                # Further validation: Must be a list
                 content = json.load(f_check)
                 if not isinstance(content, list):
-                     raise ValueError("JSON content must be an array (list).")
-            logger.info(f"JSON syntax and structure validation passed for scheduled file '{schedule_name}' (user {user_id}).")
-        except json.JSONDecodeError as json_err:
-             error_line_info = ""
-             if hasattr(json_err, 'lineno') and hasattr(json_err, 'colno'):
-                 error_line_info = f" near line {json_err.lineno}, column {json_err.colno}"
-             raise ValueError(f"Invalid JSON format in the uploaded file{error_line_info}. Error: {json_err.msg}")
-        except ValueError as val_err: # Catch our list validation error
-             raise val_err
-        except Exception as read_err: # Catch other read errors
-             raise ValueError(f"Could not read or validate the downloaded file: {read_err}")
+                    raise ValueError("JSON content must be an array (list).")
+            logger.info(f"JSON validation passed for scheduled file '{schedule_name}' (user {user_id}).")
 
-        # Move the validated file to persistent storage (atomic replace if possible)
-        shutil.move(temp_download_path, persistent_file_path) # Move overwrites existing if any
+        shutil.move(temp_download_path, persistent_file_path)
         logger.info(f"Stored file for schedule '{schedule_name}' (user {user_id}) persistently at: {persistent_file_path}")
 
-        # --- Update Schedule Configuration ---
         schedules = load_scheduled_files()
         user_id_str = str(user_id)
         now_utc = datetime.now(timezone.utc)
-        # Schedule first run immediately or after interval? Let's start after interval.
         next_run_time = now_utc + timedelta(seconds=interval_seconds)
 
         if user_id_str not in schedules:
             schedules[user_id_str] = {}
 
-        # Add/update schedule entry
         schedules[user_id_str][schedule_name] = {
             'interval_seconds': interval_seconds,
-            'telegram_file_id': document.file_id, # Store original file ID for reference
-            'stored_file_path': persistent_file_path, # Path to the locally stored copy
-            'last_run_time_iso': None, # Never run initially
+            'telegram_file_id': document.file_id,
+            'stored_file_path': persistent_file_path,
+            'last_run_time_iso': None,
             'next_run_time_iso': next_run_time.isoformat(),
             'added_on_iso': now_utc.isoformat(),
-            'original_telegram_filename': original_telegram_filename, # Keep original for display
-            'user_schedule_name': user_filename # Keep the name user provided for display
+            'original_telegram_filename': original_telegram_filename,
+            'user_schedule_name': user_filename,
+            'file_type': 'txt' if is_txt_file else 'json'  # Store file type
         }
 
         if save_scheduled_files(schedules):
@@ -1837,80 +1843,67 @@ async def handle_scheduled_file_upload(update: Update, context: CallbackContext)
                 f"✅ **File Schedule Set Successfully!**\n\n"
                 f"🏷️ **Schedule Name:** `{escape(user_filename)}`\n"
                 f"📄 **Associated File:** `{escape(original_telegram_filename)}`\n"
-                f"🔄 **Interval:** {format_time(interval_seconds)}\n"
-                f"⏰ **Next Run:** `{next_run_time.strftime('%Y-%m-%d %H:%M:%S UTC')}` (approximately)\n\n"
+                f"🔄 **Interval:** {format_time(interval_seconds)} (7 hours = 420 minutes)\n"
+                f"⏰ **Next Run:** `{next_run_time.strftime('%Y-%m-%d %H:%M:%S UTC')}`\n\n"
                 f"The bot will now automatically process this file and upload tokens to GitHub (if configured) every {format_time(interval_seconds)}.\n"
-                f"Use /scheduledfiles to view or /removefile to stop."
+                f"Use `/scheduledfiles` to view or `/removefile` to stop.\n"
+                f"Use `/stats` to view processing statistics."
             )
-            # ******** CORRECTED: REMOVED reply_markup from edit *********
             await context.bot.edit_message_text(
                 chat_id=progress_msg.chat_id, message_id=progress_msg.message_id,
                 text=confirmation_text, parse_mode=ParseMode.MARKDOWN
             )
-            # Clear the pending state from user_data AFTER success
             context.user_data.pop('pending_schedule', None)
         else:
-             # Saving failed, attempt cleanup
-             logger.error(f"Failed to save schedule config file after setting '{schedule_name}' for user {user_id}.")
-             # Try to remove the persistently stored file if config saving failed
-             if os.path.exists(persistent_file_path):
-                 try: os.remove(persistent_file_path)
-                 except OSError as del_err: logger.error(f"Failed cleanup: Could not delete stored file {persistent_file_path} after config save error: {del_err}")
-             raise IOError("Failed to save the updated schedule configuration file.")
+            if os.path.exists(persistent_file_path):
+                try: os.remove(persistent_file_path)
+                except OSError as del_err: logger.error(f"Failed cleanup: Could not delete stored file {persistent_file_path} after config save error: {del_err}")
+            raise IOError("Failed to save the updated schedule configuration file.")
 
     except (ValueError, IOError, OSError, TelegramError) as e:
-        logger.error(f"Error setting up schedule '{schedule_name}' for user {user_id}: {e}", exc_info=False) # Log less verbosely for known errors
+        logger.error(f"Error setting up schedule '{schedule_name}' for user {user_id}: {e}", exc_info=False)
         error_text = f"❌ Error setting up schedule `'{escape(user_filename)}'`:\n`{escape(str(e))}`\n\nPlease try again or use /cancel."
         if progress_msg:
-            # ******** CORRECTED: REMOVED reply_markup from edit *********
             await context.bot.edit_message_text(
                 chat_id=progress_msg.chat_id, message_id=progress_msg.message_id,
                 text=error_text, parse_mode=ParseMode.MARKDOWN
             )
         else:
-            # Send new message if progress_msg failed initially
             await message.reply_text(error_text, reply_markup=main_reply_markup, parse_mode=ParseMode.MARKDOWN)
-        # Clean up potentially stored file if error occurred
         if os.path.exists(persistent_file_path):
             try: os.remove(persistent_file_path)
             except OSError: logger.warning(f"Could not clean up stored schedule file after error: {persistent_file_path}")
-        # Clear pending state on error
         context.user_data.pop('pending_schedule', None)
-    except Exception as e: # General catch-all
-        logger.error(f"Unexpected error setting up schedule '{schedule_name}' for user {user_id}: {e}", exc_info=True) # Log full trace for unexpected
+    except Exception as e:
+        logger.error(f"Unexpected error setting up schedule '{schedule_name}' for user {user_id}: {e}", exc_info=True)
         error_text = f"❌ An unexpected error occurred while setting up the schedule `'{escape(user_filename)}'`. Schedule cancelled."
         if progress_msg:
              try:
-                 # ******** CORRECTED: REMOVED reply_markup from edit *********
                  await context.bot.edit_message_text(
                       chat_id=progress_msg.chat_id, message_id=progress_msg.message_id,
                       text=error_text, parse_mode=ParseMode.MARKDOWN
                   )
-             except TelegramError as edit_err: # Log if edit fails here too
+             except TelegramError as edit_err:
                  logger.error(f"Failed to edit progress message in general exception block: {edit_err}")
-                 # Send new message as fallback
                  await message.reply_text(error_text, reply_markup=main_reply_markup, parse_mode=ParseMode.MARKDOWN)
         else:
              await message.reply_text(error_text, reply_markup=main_reply_markup, parse_mode=ParseMode.MARKDOWN)
-        # Cleanup and clear state
         if os.path.exists(persistent_file_path):
             try: os.remove(persistent_file_path)
             except OSError: pass
         context.user_data.pop('pending_schedule', None)
     finally:
-        # Always try to remove the temporary download file
         if os.path.exists(temp_download_path):
             try: os.remove(temp_download_path)
             except OSError as e: logger.warning(f"Could not remove temp schedule download file {temp_download_path}: {e}")
 
 async def remove_scheduled_file(update: Update, context: CallbackContext) -> None:
-    """Removes a specific scheduled file configuration and its stored data."""
     user = update.effective_user
     message = update.message
     if not user or not message: return
     user_id = user.id
     add_known_user(user.id)
-    context.user_data.pop('pending_schedule', None) # Clear state
+    context.user_data.pop('pending_schedule', None)
     context.user_data.pop('waiting_for_json', None)
 
     if not is_user_vip(user.id):
@@ -1931,8 +1924,6 @@ async def remove_scheduled_file(update: Update, context: CallbackContext) -> Non
         return
 
     user_filename_to_remove = args[0]
-    # We need to use the *sanitized* name which is the key in the config
-    # Re-sanitize the user input to find the correct key
     sanitized_name_to_remove = sanitize_filename(user_filename_to_remove)
 
     schedules = load_scheduled_files()
@@ -1946,14 +1937,11 @@ async def remove_scheduled_file(update: Update, context: CallbackContext) -> Non
         )
         return
 
-    # Get stored path before deleting the config entry
     schedule_info = schedules[user_id_str][sanitized_name_to_remove]
     stored_file_path = schedule_info.get('stored_file_path')
-    display_name = schedule_info.get('user_schedule_name', sanitized_name_to_remove) # Use display name in confirmation
+    display_name = schedule_info.get('user_schedule_name', sanitized_name_to_remove)
 
-    # Remove the schedule entry from the user's dict
     del schedules[user_id_str][sanitized_name_to_remove]
-    # If user has no more schedules, remove the user entry itself for cleanup
     if not schedules[user_id_str]:
         del schedules[user_id_str]
 
@@ -1961,7 +1949,6 @@ async def remove_scheduled_file(update: Update, context: CallbackContext) -> Non
     file_delete_success = False
     file_delete_error = None
 
-    # Attempt to delete the stored file data
     if stored_file_path and os.path.exists(stored_file_path):
         try:
             os.remove(stored_file_path)
@@ -1971,13 +1958,20 @@ async def remove_scheduled_file(update: Update, context: CallbackContext) -> Non
             file_delete_error = str(e)
             logger.error(f"Failed to delete stored file {stored_file_path} for schedule '{sanitized_name_to_remove}' user {user_id}: {e}")
 
-    # Report result to user
+    # Also remove stats for this schedule
+    stats = load_process_stats()
+    if user_id_str in stats and sanitized_name_to_remove in stats[user_id_str]:
+        del stats[user_id_str][sanitized_name_to_remove]
+        if not stats[user_id_str]:
+            del stats[user_id_str]
+        save_process_stats(stats)
+
     response_parts = []
     if config_save_success:
         response_parts.append(f"✅ Schedule `'{escape(display_name)}'` removed successfully.")
         logger.info(f"Removed schedule '{sanitized_name_to_remove}' for user {user_id}.")
     else:
-        response_parts.append(f"⚠️ Failed to save the configuration after removing schedule `'{escape(display_name)}'`. It might reappear temporarily.")
+        response_parts.append(f"⚠️ Failed to save the configuration after removing schedule `'{escape(display_name)}'`.")
 
     if stored_file_path:
         if file_delete_success:
@@ -1985,23 +1979,19 @@ async def remove_scheduled_file(update: Update, context: CallbackContext) -> Non
         elif file_delete_error:
             response_parts.append(f"⚠️ Could not delete the associated stored file: {escape(file_delete_error)}")
         elif not os.path.exists(stored_file_path):
-             # This case might happen if deleted previously or manually
-             response_parts.append("ℹ️ Associated stored file was already missing or path was invalid.")
+             response_parts.append("ℹ️ Associated stored file was already missing.")
     else:
-        # Case where path wasn't stored correctly in config
-        response_parts.append("ℹ️ No stored file path found in config for this schedule.")
-
+        response_parts.append("ℹ️ No stored file path found in config.")
 
     await message.reply_text("\n".join(response_parts), parse_mode=ParseMode.MARKDOWN, reply_markup=main_reply_markup)
 
 async def list_scheduled_files(update: Update, context: CallbackContext) -> None:
-    """Lists the user's currently active scheduled files."""
     user = update.effective_user
     message = update.message
     if not user or not message: return
     user_id = user.id
     add_known_user(user.id)
-    context.user_data.pop('pending_schedule', None) # Clear state
+    context.user_data.pop('pending_schedule', None)
     context.user_data.pop('waiting_for_json', None)
 
     if not is_user_vip(user.id):
@@ -2026,48 +2016,43 @@ async def list_scheduled_files(update: Update, context: CallbackContext) -> None
     message_parts = ["⚙️ *Your Scheduled Files for Auto-Processing:*\n"]
     now_utc = datetime.now(timezone.utc)
 
-    # Sort schedules by the user-provided name for consistent display
-    # Fallback to internal name if user_schedule_name is missing
     sorted_schedule_items = sorted(
         user_schedules.items(),
         key=lambda item: item[1].get('user_schedule_name', item[0])
     )
 
     for schedule_name, details in sorted_schedule_items:
-        if not isinstance(details, dict): continue # Skip malformed entries
+        if not isinstance(details, dict): continue
 
-        user_display_name = details.get('user_schedule_name', schedule_name) # Prefer user's name
+        user_display_name = details.get('user_schedule_name', schedule_name)
         interval_s = details.get('interval_seconds')
         next_run_iso = details.get('next_run_time_iso')
         last_run_iso = details.get('last_run_time_iso')
         original_tg_file = details.get('original_telegram_filename', 'N/A')
+        file_type = details.get('file_type', 'json')
 
         message_parts.append(f"\n🏷️ **Name:** `{escape(user_display_name)}`")
-        message_parts.append(f"   📄 *Source File:* `{escape(original_tg_file)}`")
+        message_parts.append(f"   📄 *Source File:* `{escape(original_tg_file)}` ({file_type.upper()})")
         if interval_s and isinstance(interval_s, int):
-            message_parts.append(f"   🔄 *Interval:* {format_time(interval_s)}")
+            message_parts.append(f"   🔄 *Interval:* {format_time(interval_s)} (7 hours = 420 minutes)")
         else:
             message_parts.append(f"   🔄 *Interval:* `Error: Invalid/Not Set`")
 
-        # Format Next Run Time
         if next_run_iso:
             try:
                 next_run_dt = datetime.fromisoformat(next_run_iso.replace('Z', '+00:00'))
                 next_run_formatted = next_run_dt.strftime('%Y-%m-%d %H:%M UTC')
-                # Calculate time remaining
                 time_until_next = next_run_dt - now_utc
                 if time_until_next.total_seconds() > 0:
                     remaining_str = format_time(time_until_next.total_seconds())
                     message_parts.append(f"   ⏰ *Next Run:* {next_run_formatted} (`{remaining_str}`)")
                 else:
                     message_parts.append(f"   ⏰ *Next Run:* {next_run_formatted} (`Due now or overdue`)")
-
             except (ValueError, TypeError):
-                message_parts.append(f"   ⏰ *Next Run:* `Error: Invalid Date ({escape(str(next_run_iso)[:19])})`")
+                message_parts.append(f"   ⏰ *Next Run:* `Error: Invalid Date`")
         else:
              message_parts.append(f"   ⏰ *Next Run:* `Not Scheduled Yet / Error`")
 
-        # Format Last Run Time
         if last_run_iso:
              try:
                  last_run_dt = datetime.fromisoformat(last_run_iso.replace('Z', '+00:00'))
@@ -2079,13 +2064,12 @@ async def list_scheduled_files(update: Update, context: CallbackContext) -> None
              message_parts.append(f"   ⏱️ *Last Run:* `Never`")
 
     message_parts.append("\nUse `/removefile <ScheduleName.json>` to stop a schedule.")
+    message_parts.append("Use `/stats` to view detailed processing statistics.")
 
     final_message = "\n".join(message_parts)
-    # Handle potentially long messages if user has many schedules
     if len(final_message) > 4096:
         await message.reply_text("Your list of scheduled files is too long to display fully. Showing the first part:")
-        # Truncate carefully to avoid breaking markdown
-        safe_truncate_point = final_message[:4050].rfind('\n') # Find last newline before ~limit
+        safe_truncate_point = final_message[:4050].rfind('\n')
         if safe_truncate_point == -1: safe_truncate_point = 4050
         await message.reply_text(final_message[:safe_truncate_point]+"...", parse_mode=ParseMode.MARKDOWN, reply_markup=main_reply_markup)
     else:
@@ -2094,11 +2078,9 @@ async def list_scheduled_files(update: Update, context: CallbackContext) -> None
 # --- Admin Commands ---
 
 async def vip_management(update: Update, context: CallbackContext) -> None:
-    """Manage VIP users: add, remove, list (admin only)."""
     user = update.effective_user
     message = update.message
-    # Basic admin checks
-    if not user or not message or not ADMIN_ID or user.id != ADMIN_ID: # Added ADMIN_ID check here too
+    if not user or not message or not ADMIN_ID or user.id != ADMIN_ID:
         logger.warning(f"Unauthorized access attempt to /vip by user {user.id if user else 'Unknown'}")
         if message: await message.reply_text("You are not authorized to use this command.", reply_markup=main_reply_markup)
         return
@@ -2111,7 +2093,7 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
         "👑 *Admin VIP Management*\n\n"
         "*Usage:*\n"
         "`/vip add <user_id> <days>` - Add/extend VIP\n"
-        "`/vip remove <user_id>` - Remove VIP, GitHub config & *ALL* user's scheduled files\n" # Updated description
+        "`/vip remove <user_id>` - Remove VIP, GitHub config & schedules\n"
         "`/vip list` - List VIPs (active & expired)\n\n"
         "*Example:* `/vip add 123456789 30`"
     )
@@ -2121,7 +2103,7 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
         return
 
     action = args[0].lower()
-    vip_data = load_vip_data() # Load fresh data
+    vip_data = load_vip_data()
 
     if action == 'add':
         if len(args) != 3:
@@ -2139,10 +2121,10 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
                  return await message.reply_text("⚠️ Number of days must be positive.")
 
             now_utc = datetime.now(timezone.utc)
-            start_date_for_calc = now_utc # Default start date is now
+            start_date_for_calc = now_utc
 
             user_vip_info = vip_data.get(target_user_id_str, {})
-            if not isinstance(user_vip_info, dict): user_vip_info = {} # Ensure it's a dict
+            if not isinstance(user_vip_info, dict): user_vip_info = {}
 
             is_extending = False
             if target_user_id_str in vip_data:
@@ -2150,29 +2132,24 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
                     current_expiry_iso = user_vip_info.get('expiry')
                     if current_expiry_iso:
                         current_expiry_dt = datetime.fromisoformat(current_expiry_iso.replace('Z', '+00:00'))
-                        # If current expiry is in the future, extend from that date
                         if current_expiry_dt > now_utc:
                             start_date_for_calc = current_expiry_dt
                             is_extending = True
                             logger.info(f"Extending existing VIP for {target_user_id} from {current_expiry_dt.isoformat()}")
                 except (ValueError, TypeError, KeyError) as e:
-                    # Log error if expiry format is bad, but proceed as if adding new
-                    logger.warning(f"Invalid expiry format ('{user_vip_info.get('expiry')}') for user {target_user_id_str} in VIP data: {e}. Starting new period from now.")
-                    user_vip_info = {} # Reset info if format was bad
+                    logger.warning(f"Invalid expiry format for user {target_user_id_str}: {e}")
+                    user_vip_info = {}
 
-            # Calculate new expiry date
             new_expiry_date = start_date_for_calc + timedelta(days=days_to_add)
 
-            # Update VIP info, preserving added_on if extending
             user_vip_info.update({
                 'expiry': new_expiry_date.isoformat(),
-                'added_by': user.id, # Record which admin added/updated
-                'added_on': user_vip_info.get('added_on', now_utc.isoformat()), # Keep original add date if exists
-                'last_update': now_utc.isoformat() # Always update last modified time
+                'added_by': user.id,
+                'added_on': user_vip_info.get('added_on', now_utc.isoformat()),
+                'last_update': now_utc.isoformat()
             })
-            vip_data[target_user_id_str] = user_vip_info # Put updated info back
+            vip_data[target_user_id_str] = user_vip_info
 
-            # Save updated VIP data
             if save_vip_data(vip_data):
                 expiry_formatted_display = new_expiry_date.strftime('%Y-%m-%d %H:%M:%S UTC')
                 action_word = "Extended" if is_extending else "Added"
@@ -2180,10 +2157,9 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
                 logger.info(f"Admin {user.id} {action_word.lower()} VIP for {target_user_id} to {expiry_formatted_display}")
                 await message.reply_text(response_msg, parse_mode=ParseMode.MARKDOWN)
 
-                # --- Notify User ---
                 try:
-                    target_user_info_str = f"User ID `{target_user_id}`" # Default
-                    try: # Try to get more user details for the message
+                    target_user_info_str = f"User ID `{target_user_id}`"
+                    try:
                         chat_info = await context.bot.get_chat(target_user_id)
                         name_parts = []
                         if chat_info.username: name_parts.append(f"@{escape(chat_info.username)}")
@@ -2193,9 +2169,8 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
                     except TelegramError as chat_err:
                         logger.warning(f"Could not get chat info for {target_user_id} during VIP notification: {chat_err}")
 
-                    admin_name = escape(user.first_name) or f"Admin (`{user.id}`)" # Get admin name
+                    admin_name = escape(user.first_name) or f"Admin (`{user.id}`)"
 
-                    # Format added_on date for user message
                     added_on_str = "Unknown"
                     added_on_iso = user_vip_info.get('added_on')
                     if added_on_iso:
@@ -2217,27 +2192,26 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
                     await context.bot.send_message(target_user_id, vip_dm_message, parse_mode=ParseMode.MARKDOWN)
                     await message.reply_text(f"✅ User `{target_user_id}` notified of the update.", parse_mode=ParseMode.MARKDOWN, disable_notification=True)
 
-                # Handle notification errors
                 except Forbidden:
-                    logger.warning(f"Could not notify user {target_user_id} about VIP update (Forbidden: Bot blocked or user deactivated).")
+                    logger.warning(f"Could not notify user {target_user_id} about VIP update (Forbidden).")
                     await message.reply_text(f"⚠️ Could not notify user `{target_user_id}` (Bot blocked or user left).", parse_mode=ParseMode.MARKDOWN, disable_notification=True)
-                except BadRequest as notify_err: # Catch specific bad requests (e.g., chat not found)
+                except BadRequest as notify_err:
                     logger.warning(f"Could not notify user {target_user_id} about VIP update (BadRequest): {notify_err}")
                     await message.reply_text(f"⚠️ Could not notify user `{target_user_id}`: {escape(str(notify_err))}", parse_mode=ParseMode.MARKDOWN, disable_notification=True)
-                except TelegramError as notify_err: # Catch other Telegram errors
+                except TelegramError as notify_err:
                     logger.warning(f"Could not notify user {target_user_id} about VIP update (TelegramError): {notify_err}")
                     await message.reply_text(f"⚠️ Could not notify user `{target_user_id}`: {escape(str(notify_err))}", parse_mode=ParseMode.MARKDOWN, disable_notification=True)
-                except Exception as notify_err: # Catch unexpected errors
+                except Exception as notify_err:
                      logger.error(f"Unexpected error notifying user {target_user_id} about VIP update: {notify_err}", exc_info=True)
                      await message.reply_text(f"⚠️ Unexpected error creating/sending notification to user `{target_user_id}`.", parse_mode=ParseMode.MARKDOWN, disable_notification=True)
 
-            else: # Failed to save VIP data file
+            else:
                 logger.error(f"Failed to save VIP data file after attempting to add/extend for user {target_user_id_str}")
                 await message.reply_text("❌ **Error:** Could not save updated VIP data to file. The change was not applied.")
 
-        except ValueError: # Handle non-numeric user ID or days
+        except ValueError:
             await message.reply_text("⚠️ Invalid number format for User ID or Days.")
-        except Exception as e: # General error handling
+        except Exception as e:
             logger.error(f"Error processing '/vip add' command: {e}", exc_info=True)
             await message.reply_text(f"An unexpected error occurred during VIP addition: {escape(str(e))}")
 
@@ -2256,7 +2230,6 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
         file_delete_errors = []
         response_parts = []
 
-        # --- Remove VIP Status ---
         was_vip = target_user_id_str in vip_data
         if was_vip:
             del vip_data[target_user_id_str]
@@ -2268,11 +2241,10 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
                 vip_save_error = True
                 response_parts.append(f"❌ Error saving VIP data after attempting removal for `{target_user_id_str}`.")
                 logger.error(f"Failed to save VIP data after removing {target_user_id_str}.")
-                vip_data = load_vip_data() # Reload to reflect reality if save failed
+                vip_data = load_vip_data()
         else:
             response_parts.append(f"ℹ️ User `{target_user_id_str}` was not found in the VIP list.")
 
-        # --- Remove GitHub Config ---
         github_configs = load_github_configs()
         was_github_config = target_user_id_str in github_configs
         if was_github_config:
@@ -2285,22 +2257,19 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
                 github_save_error = True
                 response_parts.append(f"❌ Error saving GitHub config data after attempting removal for `{target_user_id_str}`.")
                 logger.error(f"Failed to save GitHub config data after removing for {target_user_id_str}.")
-                # No need to reload, just report error
 
-        # --- Remove Scheduled Files (Config & Data) ---
         schedules_data = load_scheduled_files()
         user_schedules = schedules_data.get(target_user_id_str, {})
         if user_schedules:
             schedule_names_to_remove = list(user_schedules.keys())
             paths_to_delete = [info.get('stored_file_path') for info in user_schedules.values() if info.get('stored_file_path')]
 
-            del schedules_data[target_user_id_str] # Remove user's whole schedule entry
+            del schedules_data[target_user_id_str]
             if save_scheduled_files(schedules_data):
                 removed_schedules = True
                 response_parts.append(f"✅ Successfully removed {len(schedule_names_to_remove)} scheduled file configuration(s) for `{target_user_id_str}`.")
                 logger.info(f"Removed {len(schedule_names_to_remove)} schedule configs for {target_user_id_str} during VIP removal.")
 
-                # Now delete the stored files
                 for file_path in paths_to_delete:
                     if file_path and os.path.exists(file_path):
                         try:
@@ -2322,13 +2291,16 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
                  response_parts.append(f"❌ Error saving schedule config data after attempting removal for `{target_user_id_str}`.")
                  logger.error(f"Failed to save schedule config data after removing for {target_user_id_str}.")
 
-        # --- Send Summary to Admin ---
+        # Also remove stats for this user
+        stats = load_process_stats()
+        if target_user_id_str in stats:
+            del stats[target_user_id_str]
+            save_process_stats(stats)
+
         await message.reply_text("\n".join(response_parts) if response_parts else "No action taken or user not found.", parse_mode=ParseMode.MARKDOWN)
 
-        # --- Notify User (if VIP was actually removed) ---
         if removed_vip:
             try:
-                # Construct a more informative message based on what was removed
                 notify_message = "ℹ️ Your VIP status has been removed by an admin."
                 removed_features = []
                 if removed_github: removed_features.append("GitHub upload config")
@@ -2352,7 +2324,6 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
                  await message.reply_text(f"⚠️ Unexpected error notifying user `{target_user_id}` of removal.", parse_mode=ParseMode.MARKDOWN, disable_notification=True)
 
     elif action == 'list':
-        # (VIP list logic remains the same)
         active_vips, inactive_vips, invalid_entries = [], [], []
         now_utc = datetime.now(timezone.utc)
 
@@ -2372,7 +2343,6 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
                 expiry_fmt = expiry_dt.strftime('%Y-%m-%d %H:%M UTC')
 
                 if expiry_dt > now_utc:
-                    # Calculate remaining time
                     rem_delta = expiry_dt - now_utc
                     days = rem_delta.days
                     hours, remainder = divmod(rem_delta.seconds, 3600)
@@ -2381,9 +2351,8 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
                     rem_str = ""
                     if days > 0: rem_str += f"{days}d "
                     if hours > 0: rem_str += f"{hours}h "
-                    # Show minutes only if less than a day remaining for brevity
                     if days <= 0 and hours <= 0 and minutes > 0 : rem_str += f"{minutes}m"
-                    if not rem_str.strip(): rem_str = "< 1m" # If very close expiry
+                    if not rem_str.strip(): rem_str = "< 1m"
                     rem_str = rem_str.strip()
 
                     active_vips.append(f"✅ ID: `{safe_uid_str}` | Expires: {expiry_fmt} | Rem: `{escape(rem_str)}`")
@@ -2391,32 +2360,26 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
                     inactive_vips.append(f"❌ ID: `{safe_uid_str}` | Expired: {expiry_fmt}")
 
             except (ValueError, TypeError):
-                safe_iso_snippet = escape(str(expiry_iso)[:25]) # Show snippet of invalid date
+                safe_iso_snippet = escape(str(expiry_iso)[:25])
                 invalid_entries.append(f"ID: `{safe_uid_str}` | Invalid date format stored ('{safe_iso_snippet}...')")
-            except Exception as e: # Catch other processing errors for this entry
+            except Exception as e:
                 invalid_entries.append(f"ID: `{safe_uid_str}` | Error processing entry: {escape(str(e))}")
 
-        # --- Construct List Message ---
         message_parts = [f"🌟 *VIP User List* ({len(active_vips)} Active)\n"]
 
         if active_vips:
-            # Sort active VIPs by expiry date (soonest first)
             active_vips.sort(key=lambda x: datetime.strptime(re.search(r'Expires: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) UTC', x).group(1), '%Y-%m-%d %H:%M'))
             message_parts.append("*Active VIPs:*")
             message_parts.extend(active_vips)
         else:
             message_parts.append("No active VIP users found.")
 
-        # Add inactive/expired VIPs section if any
         if inactive_vips:
-             # Sort inactive by User ID
              inactive_vips.sort(key=lambda x: int(re.search(r'ID: `(\d+)`', x).group(1)) if re.search(r'ID: `(\d+)`', x) else 0)
              message_parts.append(f"\n*Expired VIPs ({len(inactive_vips)}):*")
              message_parts.extend(inactive_vips)
 
-        # Add invalid entry section if any
         if invalid_entries:
-            # Sort invalid by User ID
             invalid_entries.sort(key=lambda x: int(re.search(r'ID: `(\d+)`', x).group(1)) if re.search(r'ID: `(\d+)`', x) else 0)
             message_parts.append(f"\n*Invalid/Error Entries ({len(invalid_entries)}):*")
             message_parts.extend(invalid_entries)
@@ -2425,25 +2388,21 @@ async def vip_management(update: Update, context: CallbackContext) -> None:
 
         final_message = "\n".join(message_parts)
 
-        # Handle potential message length limit
         if len(final_message) > 4096:
             logger.warning("VIP list message exceeds 4096 characters. Sending truncated message.")
-            # Find last newline before limit
-            split_point = final_message.rfind('\n', 0, 4080) # Leave some margin
-            if split_point == -1: split_point = 4080 # Fallback if no newline found
+            split_point = final_message.rfind('\n', 0, 4080)
+            if split_point == -1: split_point = 4080
             await message.reply_text(final_message[:split_point] + "\n\n...(list truncated due to length)", parse_mode=ParseMode.MARKDOWN)
         else:
             await message.reply_text(final_message, parse_mode=ParseMode.MARKDOWN)
 
-    else: # Invalid action argument
+    else:
         await message.reply_text(f"⚠️ Invalid action '{escape(action)}'.\n\n" + command_usage, parse_mode=ParseMode.MARKDOWN)
 
 async def broadcast(update: Update, context: CallbackContext) -> None:
-    """Sends a message to all known users (admin only). Supports Markdown/HTML."""
     user = update.effective_user
-    message = update.message;
+    message = update.message
 
-    # Admin & private chat checks
     if not user or not message or not ADMIN_ID or user.id != ADMIN_ID:
         logger.warning(f"Unauthorized access attempt to /broadcast by user {user.id if user else 'Unknown'}")
         if message: await message.reply_text("You are not authorized to use this command.")
@@ -2453,14 +2412,11 @@ async def broadcast(update: Update, context: CallbackContext) -> None:
          return
 
     message_to_send = ""
-    parse_mode_to_use = None # Default to None (plain text)
+    parse_mode_to_use = None
 
-    # Extract message content, allowing for replies to forward
     replied_message = message.reply_to_message
     if replied_message:
-        # If replying, use the content of the replied message
         message_to_send = replied_message.text or replied_message.caption or ""
-        # Prefer HTML if available, then MarkdownV2, then plain text
         if replied_message.text_html or replied_message.caption_html:
             parse_mode_to_use = ParseMode.HTML
             message_to_send = replied_message.text_html or replied_message.caption_html
@@ -2469,26 +2425,17 @@ async def broadcast(update: Update, context: CallbackContext) -> None:
              parse_mode_to_use = ParseMode.MARKDOWN_V2
              message_to_send = replied_message.text_markdown_v2 or replied_message.caption_markdown_v2
              logger.debug("Using MarkdownV2 parse mode for broadcast from replied message.")
-        # TODO: Add handling for forwarding media if needed (more complex)
-        # elif replied_message.photo or replied_message.video etc...
-        #   await context.bot.copy_message(...) for each user?
     else:
-        # If not replying, extract text after /broadcast command
         if message.text:
             text_content = message.text
-            # Regex to strip command, case-insensitive, handles optional @botusername
             command_pattern = rf"^\s*/broadcast(?:@{context.bot.username})?\s+"
             message_to_send = re.sub(command_pattern, '', text_content, count=1, flags=re.IGNORECASE | re.DOTALL).strip()
 
-            # Basic auto-detect formatting - prefer explicit formatting by admin
-            # If entities exist, assume the admin used a specific format
             if message.entities:
                  if any(e.type in ['bold', 'italic', 'code', 'pre', 'text_link', 'strikethrough', 'underline', 'spoiler'] for e in message.entities):
-                     # If standard entities are used, assume MarkdownV2 was intended
                      parse_mode_to_use = ParseMode.MARKDOWN_V2
-                     message_to_send = message.text_markdown_v2 # Use the entity-parsed version
+                     message_to_send = message.text_markdown_v2
                      logger.debug(f"Detected MarkdownV2 entities, using MarkdownV2 for broadcast.")
-                 # Could add HTML detection if needed, but MarkdownV2 is generally safer
 
     if not message_to_send:
          return await message.reply_text(
@@ -2504,26 +2451,24 @@ async def broadcast(update: Update, context: CallbackContext) -> None:
 
     total_users = len(known_users)
 
-    logger.info(f"Admin {user.id} initiated broadcast to {total_users} users. ParseMode: {parse_mode_to_use}. Message (start): '{message_to_send[:50]}...'")
+    logger.info(f"Admin {user.id} initiated broadcast to {total_users} users. ParseMode: {parse_mode_to_use}.")
     status_message_obj = None
     try:
         status_message_obj = await message.reply_text(f"📣 Broadcasting to {total_users} users... Starting now.")
     except TelegramError as e:
         logger.error(f"Failed to send initial broadcast status message: {e}")
         await message.reply_text(f"⚠️ Failed to start broadcast status tracking. Attempting to send anyway...")
-        status_message_obj = None # Continue without status updates
+        status_message_obj = None
 
     success, fail, blocked, other_fail = 0, 0, 0, 0
     start_time = time.time()
-    # Adjust update frequency based on total users
     update_interval_count = max(10, min(100, total_users // 20 if total_users >= 200 else 10))
     last_status_update_time = time.time()
 
-    user_list = list(known_users) # Convert set to list for indexed iteration
-    users_to_remove = set() # Track users who block/deactivate
+    user_list = list(known_users)
+    users_to_remove = set()
 
     for i, user_id_to_send in enumerate(user_list):
-        # Skip sending to admin self if admin is in known_users
         if user_id_to_send == ADMIN_ID:
             logger.debug("Skipping broadcast to admin self.")
             continue
@@ -2534,51 +2479,45 @@ async def broadcast(update: Update, context: CallbackContext) -> None:
                 chat_id=user_id_to_send,
                 text=message_to_send,
                 parse_mode=parse_mode_to_use,
-                disable_web_page_preview=True # Generally good practice for broadcasts
+                disable_web_page_preview=True
             )
             success += 1
             sent = True
             logger.debug(f"Broadcast: Sent to {user_id_to_send}")
-        except Forbidden: # Bot blocked by user or user deactivated
+        except Forbidden:
             blocked += 1
             users_to_remove.add(user_id_to_send)
             logger.debug(f"Broadcast: User {user_id_to_send} blocked the bot or is deactivated.")
-        except BadRequest as e: # More specific errors
+        except BadRequest as e:
             error_str = str(e).lower()
-            # Check for common reasons indicating user is unreachable permanently
             if any(sub in error_str for sub in ["chat not found", "user is deactivated", "bot was kicked", "user not found", "peer_id_invalid", "bot_blocked_by_user", "group chat was deactivated"]):
                  blocked += 1
                  users_to_remove.add(user_id_to_send)
                  logger.debug(f"Broadcast: User {user_id_to_send} unreachable ({error_str}). Marking for removal.")
             elif "can't parse entities" in error_str:
                  other_fail += 1
-                 logger.warning(f"Broadcast parse error for {user_id_to_send}: {e}. Message may need fixing.")
-                 # Consider stopping broadcast or trying plain text? For now, count as other fail.
-            else: # Other BadRequest errors
+                 logger.warning(f"Broadcast parse error for {user_id_to_send}: {e}.")
+            else:
                  other_fail += 1
                  logger.warning(f"Broadcast BadRequest for {user_id_to_send}: {e}")
-        except TelegramError as e: # Catch other Telegram API errors
-            # Could be temporary network issues, rate limits etc.
+        except TelegramError as e:
             logger.warning(f"Broadcast TelegramError for {user_id_to_send}: {e}")
             other_fail += 1
-        except Exception as e: # Catch unexpected errors during send
+        except Exception as e:
             logger.error(f"Broadcast unexpected error for {user_id_to_send}: {e}", exc_info=True)
             other_fail += 1
 
         if not sent:
             fail += 1
 
-        # --- Update Status Message Periodically ---
         current_time = time.time()
-        processed_users = i + 1 # How many we've iterated through
-        # Conditions to update: every N users OR every 10 seconds OR last user
+        processed_users = i + 1
         should_update_count = (update_interval_count > 0 and processed_users % update_interval_count == 0)
-        should_update_time = (current_time - last_status_update_time > 10) # Check every 10 secs max
+        should_update_time = (current_time - last_status_update_time > 10)
         is_last_user = (processed_users == total_users)
 
         if status_message_obj and (should_update_count or should_update_time or is_last_user):
              try:
-                # Construct status text
                 status_text = (f"📣 Broadcasting... {processed_users}/{total_users}\n"
                                f"✅ Sent: {success} | ❌ Failed: {fail} "
                                f"(🚫Blocked/Gone: {blocked}, ❓Other: {other_fail})")
@@ -2586,27 +2525,23 @@ async def broadcast(update: Update, context: CallbackContext) -> None:
                     chat_id=status_message_obj.chat_id, message_id=status_message_obj.message_id,
                     text=status_text
                 )
-                last_status_update_time = current_time # Reset timer
+                last_status_update_time = current_time
              except TelegramError as edit_err:
-                  # Ignore "not modified" errors, log others
                   if "Message is not modified" not in str(edit_err):
                        logger.warning(f"Broadcast status update failed: {edit_err}")
-                  last_status_update_time = current_time # Update time anyway to avoid spam
+                  last_status_update_time = current_time
 
-        # Small delay to avoid hitting rate limits, especially for large user bases
-        await asyncio.sleep(0.05) # ~20 messages/second throttle
+        await asyncio.sleep(0.05)
 
-    # --- Final Broadcast Summary ---
     end_time = time.time()
     duration = format_time(end_time - start_time)
     removed_count = len(users_to_remove)
     save_status = "N/A"
 
-    # Clean up known users list
     if users_to_remove:
         logger.info(f"Broadcast complete. Attempting to remove {removed_count} blocked/unreachable users from known list.")
-        current_known_users = load_known_users() # Load fresh data
-        cleaned_users = current_known_users - users_to_remove # Remove the bad ones
+        current_known_users = load_known_users()
+        cleaned_users = current_known_users - users_to_remove
         if save_known_users(cleaned_users):
             final_user_count = len(cleaned_users)
             save_status = f"✅ Removed {removed_count} inactive users ({final_user_count} remain)"
@@ -2614,12 +2549,11 @@ async def broadcast(update: Update, context: CallbackContext) -> None:
         else:
             save_status = f"❌ Save FAILED! ({removed_count} were marked for removal)"
             logger.error("Failed saving cleaned known_users file after broadcast.")
-    else: # No users needed removal
+    else:
          save_status = f"✅ 0 users marked for removal ({total_users} remain)."
 
     logger.info(f"Broadcast finished. Sent: {success}, Failed: {fail} (Blocked:{blocked}, Other:{other_fail}). Cleanup: {save_status}. Duration: {duration}")
 
-    # Construct final summary message for admin
     final_text = (
         f"🏁 Broadcast Complete!\n\n"
         f"✅ Messages Sent: {success}\n"
@@ -2631,7 +2565,6 @@ async def broadcast(update: Update, context: CallbackContext) -> None:
         f"⏱️ Duration: {duration}"
     )
 
-    # Send final summary (edit status message or send new)
     if status_message_obj:
         try:
             await context.bot.edit_message_text(
@@ -2640,37 +2573,30 @@ async def broadcast(update: Update, context: CallbackContext) -> None:
             )
         except TelegramError as e:
             logger.warning(f"Failed to edit final broadcast status: {e}")
-            await message.reply_text(final_text) # Send as new if edit fails
-    else: # If status message failed initially
+            await message.reply_text(final_text)
+    else:
         await message.reply_text(final_text)
 
-# --- Message Forwarding (Handle non-command, non-button messages) ---
+# --- Message Forwarding ---
 async def forward_to_admin(update: Update, context: CallbackContext) -> None:
-    """Forwards unhandled messages from non-admins in private chat to the admin."""
     user = update.effective_user
     message = update.message
 
-    # Conditions for forwarding: Admin ID set, message exists, private chat, not from admin
-    if not ADMIN_ID or ADMIN_ID == 0: return # Admin disabled
-    if not user or not message: return # No user/message data
-    if message.chat.type != 'private': return # Only forward from private chats
-    if user.id == ADMIN_ID: return # Don't forward admin's own messages
+    if not ADMIN_ID or ADMIN_ID == 0: return
+    if not user or not message: return
+    if message.chat.type != 'private': return
+    if user.id == ADMIN_ID: return
 
-    # Also check if the user is in the middle of a pending action we know about
     if context.user_data.get('pending_schedule'):
-        # They might be sending text instead of the file
-        await message.reply_text("I'm currently waiting for you to send the JSON *file* for your schedule. Please send the file or use /cancel.", reply_markup=main_reply_markup)
-        return # Don't forward in this state
+        await message.reply_text("I'm currently waiting for you to send the file for your schedule. Please send the file or use /cancel.", reply_markup=main_reply_markup)
+        return
     if context.user_data.get('waiting_for_json'):
-        await message.reply_text("I'm currently waiting for you to send the JSON *file* for manual processing. Please send the file or use /cancel.", reply_markup=main_reply_markup)
-        return # Don't forward in this state
+        await message.reply_text("I'm currently waiting for you to send the file for manual processing. Please send the file or use /cancel.", reply_markup=main_reply_markup)
+        return
 
-
-    # Add user to known users if they interact (even if message isn't handled)
     add_known_user(user.id)
 
     try:
-        # Create a user info header for the forwarded message
         user_info = f"Forwarded message from: ID `{user.id}`"
         details = []
         if user.username: details.append(f"@{escape(user.username)}")
@@ -2678,10 +2604,7 @@ async def forward_to_admin(update: Update, context: CallbackContext) -> None:
         if user.last_name: details.append(escape(user.last_name))
         if details: user_info += f" ({' '.join(details)})"
 
-        # Send the header first
         await context.bot.send_message(ADMIN_ID, user_info, parse_mode=ParseMode.MARKDOWN)
-
-        # Forward the actual message
         await context.bot.forward_message(
             chat_id=ADMIN_ID,
             from_chat_id=message.chat_id,
@@ -2689,9 +2612,8 @@ async def forward_to_admin(update: Update, context: CallbackContext) -> None:
         )
         logger.info(f"Forwarded message ID {message.message_id} from user {user.id} to admin {ADMIN_ID}")
 
-    except Forbidden: # Bot blocked by admin
+    except Forbidden:
         logger.error(f"Failed to forward message to admin {ADMIN_ID}: Bot might be blocked by admin.")
-        # Maybe disable forwarding temporarily? Or just log.
     except TelegramError as e:
          logger.error(f"Failed to forward message from user {user.id} to admin {ADMIN_ID} (TelegramError): {e}")
     except Exception as e:
@@ -2699,10 +2621,8 @@ async def forward_to_admin(update: Update, context: CallbackContext) -> None:
 
 # --- Global Error Handler ---
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Log Errors caused by Updates and notify Admin."""
     logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
 
-    # --- Clean up potentially stuck user states on error ---
     user_notified = False
     if isinstance(update, Update) and update.effective_chat:
         chat_id_for_notify = update.effective_chat.id
@@ -2718,49 +2638,40 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
              try:
                  await context.bot.send_message(
                      chat_id=chat_id_for_notify,
-                     text="⚠️ An internal error occurred. Any pending action (like file scheduling or waiting for a file) has been cancelled. Please try again.",
-                     reply_markup=main_reply_markup # Send keyboard with notification
+                     text="⚠️ An internal error occurred. Any pending action has been cancelled. Please try again.",
+                     reply_markup=main_reply_markup
                  )
                  user_notified = True
              except Exception as notify_err:
                   logger.error(f"Failed to notify user {chat_id_for_notify} about state cleanup after error: {notify_err}")
 
-    # --- Notify Admin (if configured) ---
     if not ADMIN_ID or ADMIN_ID == 0:
-        if not user_notified: # Only warn if user wasn't potentially notified
+        if not user_notified:
             logger.warning("Admin ID not set or invalid, cannot send error notification.")
         return
 
-    # Format traceback
     tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
     tb_string = "".join(tb_list)
 
     try:
-        # Format Update data (limit size, handle serialization issues)
         update_str = "Update data unavailable."
         if isinstance(update, Update):
              try:
-                 # Simplify update dict for logging (remove sensitive/large fields if needed)
                  update_data = update.to_dict()
-                 # Example simplification: just show message type and user ID
                  if 'message' in update_data and update_data['message']:
                      msg = update_data['message']
                      user_id_from_update = msg.get('from_user', {}).get('id', 'unknown')
                      update_data_simple = {'update_id': update_data.get('update_id'), 'message': {'message_id': msg.get('message_id'), 'chat_id': msg.get('chat',{}).get('id'), 'from_user_id': user_id_from_update, 'type': msg.get('document',{}).get('mime_type') or ('text' if 'text' in msg else 'other') }}
                      update_str = json.dumps(update_data_simple, indent=1, ensure_ascii=False, default=str)
-                 else: # Handle other update types like callback queries
+                 else:
                      update_str = json.dumps(update_data, indent=1, ensure_ascii=False, default=str, skipkeys=True)
-
              except Exception as json_err:
                  logger.error(f"Could not serialize update object to JSON: {json_err}")
-                 update_str = str(update) # Fallback to string representation
+                 update_str = str(update)
         elif update: update_str = str(update)
 
-        # Format Context data (limit size)
         context_str = "Context data unavailable or complex."
         try:
-            # Limit size of potentially large user/chat data strings
-            # Use pformat for potentially better formatting of context data
             from pprint import pformat
             chat_data_str = pformat(context.chat_data, width=80, depth=2)[:300] + ('...' if len(pformat(context.chat_data)) > 300 else '')
             user_data_str = pformat(context.user_data, width=80, depth=2)[:300] + ('...' if len(pformat(context.user_data)) > 300 else '')
@@ -2776,20 +2687,16 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
         except Exception as ctx_err:
             context_str = f"Error getting context data: {ctx_err}"
 
-        # Limit lengths for Telegram message
         max_len_tb = 3000
-        max_len_update = 500 # Reduced update size for clarity
-        max_len_context = 300 # Reduced context size
+        max_len_update = 500
+        max_len_context = 300
 
-        # Escape HTML characters in user-generated/error content
         error_escaped = escape(str(context.error))
         error_type_escaped = escape(type(context.error).__name__)
         update_short = escape(update_str[:max_len_update] + ('...' if len(update_str) > max_len_update else ''))
         context_short = escape(context_str[:max_len_context] + ('...' if len(context_str) > max_len_context else ''))
-        # Take the end of the traceback which is usually most relevant
         tb_short = escape(tb_string[-max_len_tb:])
 
-        # Construct HTML formatted message for admin
         error_message = (
             f"⚠️ <b>Bot Error Encountered</b> ⚠️\n\n"
             f"<b>Error:</b>\n<pre>{error_escaped}</pre>\n"
@@ -2799,40 +2706,35 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
             f"<b>Traceback (end, limited):</b>\n<pre>{tb_short}</pre>"
         )
 
-        max_msg_len = 4096 # Telegram message length limit
+        max_msg_len = 4096
         if len(error_message) > max_msg_len:
              logger.warning(f"Error message length ({len(error_message)}) exceeds limit. Sending in parts.")
-             # Send in chunks if too long
              for i in range(0, len(error_message), max_msg_len):
                  chunk = error_message[i:i + max_msg_len]
                  await context.bot.send_message(ADMIN_ID, chunk, parse_mode=ParseMode.HTML)
-                 await asyncio.sleep(0.5) # Small delay between chunks
+                 await asyncio.sleep(0.5)
         else:
             await context.bot.send_message(ADMIN_ID, error_message, parse_mode=ParseMode.HTML)
 
-    except Forbidden: # Bot blocked by admin
+    except Forbidden:
         logger.critical(f"CRITICAL: Cannot send error notification to admin {ADMIN_ID}. Bot might be blocked by the admin.")
-    except Exception as e: # Error sending the error message itself
+    except Exception as e:
         logger.critical(f"CRITICAL: Failed to send detailed error notification to admin: {e}", exc_info=True)
-        # Send a very basic fallback message
         try:
             fallback_msg = f"Bot encountered a critical error. Check logs immediately!\nError type: {type(context.error).__name__}\nError: {context.error}"
-            await context.bot.send_message(ADMIN_ID, fallback_msg[:4090]) # Truncate fallback too
+            await context.bot.send_message(ADMIN_ID, fallback_msg[:4090])
         except Exception as fallback_err:
-            # If even the fallback fails, log it and give up on notifying
-            logger.critical(f"CRITICAL: Failed even the simplest error notification to admin. Check logs manually. Fallback error: {fallback_err}")
+            logger.critical(f"CRITICAL: Failed even the simplest error notification to admin. Fallback error: {fallback_err}")
 
-# --- Background Task for Scheduled Processing (NEW) ---
+# --- Background Task for Scheduled Processing ---
 
 async def run_scheduled_file_processor(application: Application) -> None:
-    """Periodically checks for scheduled files and processes them."""
     bot = application.bot
     logger.info(f"Background scheduler started. Check interval: {AUTO_PROCESS_CHECK_INTERVAL}s")
-    # Initial short delay to allow bot to fully start up and maybe load initial data
     await asyncio.sleep(15)
 
     while True:
-        try: # Wrap the entire loop in a try-except to prevent scheduler death
+        try:
             now_utc = datetime.now(timezone.utc)
             logger.debug(f"Scheduler check running at {now_utc.isoformat()}")
             schedules = load_scheduled_files()
@@ -2841,17 +2743,14 @@ async def run_scheduled_file_processor(application: Application) -> None:
                 await asyncio.sleep(AUTO_PROCESS_CHECK_INTERVAL)
                 continue
 
-            tasks_to_run = [] # Collect processing tasks for this cycle
-
-            # Load GitHub configs once per cycle
+            tasks_to_run = []
             github_configs = load_github_configs()
 
-            # Iterate through a copy of user IDs to allow modification during iteration if needed (e.g., remove user)
             for user_id_str in list(schedules.keys()):
                 user_schedules = schedules.get(user_id_str)
                 if not isinstance(user_schedules, dict):
                     logger.warning(f"Scheduler: Invalid schedule data format for user {user_id_str}. Skipping.")
-                    continue # Skip invalid user entries
+                    continue
 
                 try:
                     user_id = int(user_id_str)
@@ -2859,40 +2758,34 @@ async def run_scheduled_file_processor(application: Application) -> None:
                     logger.warning(f"Scheduler: Invalid user ID key '{user_id_str}' in schedules. Skipping.")
                     continue
 
-                if not is_user_vip(user_id): # Double check VIP status each cycle
+                if not is_user_vip(user_id):
                      logger.info(f"Scheduler: User {user_id} is no longer VIP. Skipping their schedules.")
-                     # Optionally: could auto-remove schedule here, but might be better to leave for manual cleanup or expiry check
-                     # E.g., remove_all_schedules_for_user(user_id)
                      continue
 
-                user_github_config = github_configs.get(user_id_str) # Get user's specific GitHub config
+                user_github_config = github_configs.get(user_id_str)
 
-                # Iterate through a copy of schedule names for this user
                 for schedule_name in list(user_schedules.keys()):
                     schedule_info = user_schedules.get(schedule_name)
                     if not isinstance(schedule_info, dict):
                         logger.warning(f"Scheduler: Invalid schedule entry '{schedule_name}' for user {user_id}. Skipping.")
-                        continue # Skip invalid schedule entries
+                        continue
 
                     next_run_iso = schedule_info.get('next_run_time_iso')
                     stored_file_path = schedule_info.get('stored_file_path')
                     interval_seconds = schedule_info.get('interval_seconds')
 
-                    # Basic validation of essential fields
                     if not next_run_iso or not stored_file_path or not interval_seconds:
-                        logger.warning(f"Scheduler: Skipping invalid schedule '{schedule_name}' for user {user_id} (missing essential info).")
+                        logger.warning(f"Scheduler: Skipping invalid schedule '{schedule_name}' for user {user_id}.")
                         continue
 
                     try:
                         next_run_dt = datetime.fromisoformat(next_run_iso.replace('Z', '+00:00'))
                     except (ValueError, TypeError):
-                        logger.warning(f"Scheduler: Skipping schedule '{schedule_name}' for user {user_id} due to invalid next_run_time_iso: {next_run_iso}")
+                        logger.warning(f"Scheduler: Skipping schedule '{schedule_name}' for user {user_id} due to invalid next_run_time_iso.")
                         continue
 
-                    # --- Check if schedule is due ---
                     if next_run_dt <= now_utc:
                         logger.info(f"Scheduler: Schedule '{schedule_name}' for user {user_id} is due. Preparing task.")
-                        # Ensure stored file actually exists before queuing task
                         if os.path.exists(stored_file_path):
                             tasks_to_run.append(
                                 process_single_schedule(
@@ -2900,38 +2793,31 @@ async def run_scheduled_file_processor(application: Application) -> None:
                                 )
                             )
                         else:
-                            logger.error(f"Scheduler: Stored file missing for due schedule '{schedule_name}' user {user_id} at path {stored_file_path}. Skipping run and notifying user.")
+                            logger.error(f"Scheduler: Stored file missing for due schedule '{schedule_name}' user {user_id}.")
                             try:
                                 await bot.send_message(
                                     user_id,
-                                    f"⚠️ Error: Could not run scheduled task `'{escape(schedule_info.get('user_schedule_name', schedule_name))}'`. The associated data file seems to be missing. Please use `/setfile` again for this schedule.",
+                                    f"⚠️ Error: Could not run scheduled task `'{escape(schedule_info.get('user_schedule_name', schedule_name))}'`. The data file is missing. Please use `/setfile` again.",
                                     parse_mode=ParseMode.MARKDOWN
                                 )
-                                # Should we remove the broken schedule automatically? Risky. Let user fix.
-                                # Maybe just update next_run far in future?
                             except Exception as notify_err:
                                 logger.error(f"Scheduler: Failed to notify user {user_id} about missing schedule file: {notify_err}")
-                            # Skip processing this one, but don't update its time yet
 
-            # --- Run due tasks concurrently ---
             if tasks_to_run:
                 logger.info(f"Scheduler: Running {len(tasks_to_run)} due schedule(s).")
-                # Gather results, return_exceptions=True prevents one task failure from stopping others
                 results = await asyncio.gather(*tasks_to_run, return_exceptions=True)
 
-                # --- Update schedule times after processing ---
-                current_schedules = load_scheduled_files() # Reload fresh data before update
+                current_schedules = load_scheduled_files()
                 made_changes = False
                 for result in results:
                      if isinstance(result, tuple) and len(result) == 3:
-                        res_user_id_str, res_schedule_name, _ = result # Ignore success status for now
+                        res_user_id_str, res_schedule_name, success = result
                         try:
-                            # Check if schedule still exists (might have been removed manually during run)
                             if res_user_id_str in current_schedules and res_schedule_name in current_schedules[res_user_id_str]:
                                 info = current_schedules[res_user_id_str][res_schedule_name]
                                 interval_s = info.get('interval_seconds')
                                 if interval_s and isinstance(interval_s, int) and interval_s > 0:
-                                    last_run_time = datetime.now(timezone.utc) # Record actual completion time
+                                    last_run_time = datetime.now(timezone.utc)
                                     next_run_time = last_run_time + timedelta(seconds=interval_s)
                                     current_schedules[res_user_id_str][res_schedule_name]['last_run_time_iso'] = last_run_time.isoformat()
                                     current_schedules[res_user_id_str][res_schedule_name]['next_run_time_iso'] = next_run_time.isoformat()
@@ -2945,35 +2831,27 @@ async def run_scheduled_file_processor(application: Application) -> None:
                             logger.error(f"Scheduler: Error updating schedule info for User {res_user_id_str}, Schedule {res_schedule_name}: {update_err}", exc_info=True)
 
                      elif isinstance(result, Exception):
-                         # Log the exception that occurred within a task
-                         # The task itself should have logged details and notified the user
                          logger.error(f"Scheduler: Error result returned from scheduled task processing: {result}", exc_info=result)
-                         # Don't update run time for failed tasks to allow potential retry or manual check
 
                 if made_changes:
                     if not save_scheduled_files(current_schedules):
                         logger.error("Scheduler: CRITICAL - Failed to save updated schedule run times!")
 
-            else: # No tasks were run
+            else:
                 logger.debug("Scheduler: No schedules were due this cycle.")
 
         except Exception as loop_err:
             logger.critical(f"Scheduler: Unhandled exception in main processing loop: {loop_err}", exc_info=True)
-            # Avoid busy-looping if there's a persistent error
             await asyncio.sleep(60)
 
-        # Wait for the next check interval regardless of outcome (unless error caused sleep above)
         await asyncio.sleep(AUTO_PROCESS_CHECK_INTERVAL)
 
 async def process_single_schedule(bot, user_id: int, schedule_name: str, schedule_info: dict, github_config: dict | None) -> tuple[str, str, bool]:
-    """
-    Processes a single scheduled file: reads data, calls API, uploads to GitHub.
-    Returns (user_id_str, schedule_name, github_upload_success_or_skipped)
-    """
     user_id_str = str(user_id)
     stored_file_path = schedule_info.get('stored_file_path')
-    user_display_name = schedule_info.get('user_schedule_name', schedule_name) # For messages
-    github_upload_status = False # Default to false (meaning upload failed or was not needed)
+    user_display_name = schedule_info.get('user_schedule_name', schedule_name)
+    file_type = schedule_info.get('file_type', 'json')
+    github_upload_status = False
 
     log_prefix = f"AutoProcess User {user_id} Schedule '{schedule_name}':"
     logger.info(f"{log_prefix} Starting.")
@@ -2981,57 +2859,57 @@ async def process_single_schedule(bot, user_id: int, schedule_name: str, schedul
     notify_parts = [f"⚙️ Auto-processing started for schedule `'{escape(user_display_name)}'`..."]
     status_msg_obj = None
     try:
-        # Send initial status (no reply markup)
         status_msg_obj = await bot.send_message(user_id, notify_parts[0], parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
         logger.error(f"{log_prefix} Failed to send initial status DM: {e}")
-        # Proceed without status updates if initial message fails
 
     accounts_data = []
-    # Create a unique temporary directory for this specific run's results
     run_timestamp = int(time.time())
     temp_results_dir = os.path.join(TEMP_DIR, f"auto_{user_id}_{schedule_name}_{run_timestamp}")
-    cleanup_paths_auto = [temp_results_dir] # Add main temp dir for cleanup
+    cleanup_paths_auto = [temp_results_dir]
     jwt_token_path_for_upload = None
 
     try:
-        # --- 1. Read and Validate Stored File ---
         if not stored_file_path or not os.path.exists(stored_file_path):
             raise FileNotFoundError(f"Stored file path missing or file not found: {stored_file_path}")
 
         await update_schedule_status(bot, status_msg_obj, notify_parts, "Reading stored file...")
 
-        with open(stored_file_path, 'r', encoding='utf-8') as f:
-            try:
-                accounts_data = json.load(f)
-                if not isinstance(accounts_data, list):
-                    raise ValueError("Scheduled file content must be a JSON list `[...]`.")
-                if accounts_data and not all(isinstance(item, dict) for item in accounts_data):
-                     # Be more specific about the error
-                     first_bad = next((x for x in accounts_data if not isinstance(x, dict)), None)
-                     raise ValueError(f"All items in the list must be JSON objects (`{{...}}`). Found: {type(first_bad)}")
-                logger.info(f"{log_prefix} Read {len(accounts_data)} accounts from {stored_file_path}")
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON format in stored file: {e.msg} (Line: {e.lineno}, Col: {e.colno})")
-            except ValueError as ve: # Catch our structure validation error
-                 raise ve
-            except Exception as read_err:
-                 raise IOError(f"Could not read stored file: {read_err}")
-
+        # Read based on file type
+        if file_type == 'txt':
+            with open(stored_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            accounts_data = parse_txt_content(content)
+            if not accounts_data:
+                raise ValueError("No valid 'uid:password' pairs found in the TXT file.")
+        else:
+            with open(stored_file_path, 'r', encoding='utf-8') as f:
+                try:
+                    accounts_data = json.load(f)
+                    if not isinstance(accounts_data, list):
+                        raise ValueError("Scheduled file content must be a JSON list `[...]`.")
+                    if accounts_data and not all(isinstance(item, dict) for item in accounts_data):
+                         first_bad = next((x for x in accounts_data if not isinstance(x, dict)), None)
+                         raise ValueError(f"All items in the list must be JSON objects. Found: {type(first_bad)}")
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"Invalid JSON format in stored file: {e.msg} (Line: {e.lineno}, Col: {e.colno})")
+                except ValueError as ve:
+                     raise ve
+                except Exception as read_err:
+                     raise IOError(f"Could not read stored file: {read_err}")
 
         total_count = len(accounts_data)
         if total_count == 0:
             logger.info(f"{log_prefix} Stored file is empty. No processing needed.")
             await update_schedule_status(bot, status_msg_obj, notify_parts, "✅ Finished: Stored file was empty.")
-            # Return success because the task ran, even if there was nothing to do
-            return user_id_str, schedule_name, True # github_upload_status is implicitly True (skipped)
+            update_process_stats(user_id, schedule_name, 0, 0, 0, False)
+            return user_id_str, schedule_name, True
 
-        # --- 2. Process Accounts via API ---
         await update_schedule_status(bot, status_msg_obj, notify_parts, f"Processing {total_count} accounts via API...")
 
         start_time = time.time()
         successful_tokens = []
-        working_accounts = [] # Keep track for potential future use (e.g., detailed logs)
+        working_accounts = []
         lost_accounts = []
         errors_summary = defaultdict(int)
         processed_count = 0
@@ -3041,8 +2919,7 @@ async def process_single_schedule(bot, user_id: int, schedule_name: str, schedul
             tasks = [process_account(session, account, semaphore) for account in accounts_data]
 
             for i, future in enumerate(asyncio.as_completed(tasks)):
-                # Progress update within processing loop (less frequent than manual)
-                update_freq_auto = max(5, min(50, total_count // 10)) # Update more granularly for auto tasks maybe
+                update_freq_auto = max(5, min(50, total_count // 10))
                 if status_msg_obj and (i + 1) % update_freq_auto == 0:
                      progress_pct = ((i + 1) / total_count) * 100
                      await update_schedule_status(bot, status_msg_obj, notify_parts, f"Processing API... {i+1}/{total_count} ({progress_pct:.0f}%)", keep_last=False)
@@ -3057,7 +2934,7 @@ async def process_single_schedule(bot, user_id: int, schedule_name: str, schedul
                         lost_accounts.append(lost_acc)
                         reason = lost_acc.get("error_reason", "Unknown")
                         errors_summary[reason.split(':')[0].strip()] += 1
-                    else: # Should not happen
+                    else:
                          lost_accounts.append({"account_info": "unknown", "error_reason": "Unexpected process_account result"})
                          errors_summary["Processing function error"] += 1
                 except Exception as task_err:
@@ -3065,86 +2942,69 @@ async def process_single_schedule(bot, user_id: int, schedule_name: str, schedul
                     logger.error(f"{log_prefix} Error retrieving result from API task: {task_err}", exc_info=True)
                     lost_accounts.append({"account_info": "unknown", "error_reason": f"Task Error: {task_err}"})
                     errors_summary["Internal task error"] += 1
-                    # Try to continue processing other accounts
 
         processing_time = time.time() - start_time
         logger.info(f"{log_prefix} API processing finished in {processing_time:.2f}s. Success: {len(successful_tokens)}, Failed: {len(lost_accounts)}")
         notify_parts.append(f"📊 API Results: {len(successful_tokens)} tokens generated, {len(lost_accounts)} failures.")
         if errors_summary:
-             # Show top 1-2 errors in notification briefly
              top_errors = sorted(errors_summary.items(), key=lambda item: item[1], reverse=True)
              error_snippets = []
              for err_msg, count in top_errors[:2]:
                  error_snippets.append(f"`{escape(err_msg)}` ({count})")
              notify_parts.append(f"   (Top errors: {'; '.join(error_snippets)})")
 
+        # Update statistics
+        update_process_stats(user_id, schedule_name, total_count, len(successful_tokens), len(lost_accounts), False)
 
-        # --- 3. Prepare Token File for Upload ---
         if successful_tokens:
             await update_schedule_status(bot, status_msg_obj, notify_parts, "Preparing token file for upload...")
-            os.makedirs(temp_results_dir, exist_ok=True) # Ensure temp dir for this run exists
-            # Use a unique name within the run's temp dir
+            os.makedirs(temp_results_dir, exist_ok=True)
             jwt_token_path_for_upload = os.path.join(temp_results_dir, 'jwt_token_auto.json')
-            # Filter out potential null/empty tokens just in case
             tokens_only_list = [{"token": entry["token"]} for entry in successful_tokens if entry.get("token")]
             if tokens_only_list:
                 if not save_json_data(jwt_token_path_for_upload, tokens_only_list):
-                    jwt_token_path_for_upload = None # Nullify if save failed
+                    jwt_token_path_for_upload = None
                     raise IOError("Failed to save temporary token file for upload.")
                 logger.info(f"{log_prefix} Saved {len(tokens_only_list)} tokens to {jwt_token_path_for_upload}")
             else:
-                jwt_token_path_for_upload = None # No valid tokens to save
-                logger.info(f"{log_prefix} No valid tokens found to save for upload, although processing reported successes.")
+                jwt_token_path_for_upload = None
+                logger.info(f"{log_prefix} No valid tokens found to save for upload.")
                 notify_parts.append("ℹ️ No valid tokens generated, skipping GitHub upload.")
-                github_upload_status = True # Skipped is considered 'success' in terms of the schedule run
+                github_upload_status = True
         else:
             logger.info(f"{log_prefix} No successful tokens generated. Skipping GitHub upload prep.")
             notify_parts.append("ℹ️ No successful tokens, skipping GitHub upload.")
-            github_upload_status = True # Skipped is 'success'
+            github_upload_status = True
 
-        # --- 4. Trigger GitHub Upload ---
-        # Check if token file was created AND github config exists and is valid
         if jwt_token_path_for_upload and github_config and isinstance(github_config, dict):
             await update_schedule_status(bot, status_msg_obj, notify_parts, "Attempting GitHub upload...")
-            # Call the background-safe upload function
             upload_success = await upload_to_github_background(
                 bot, user_id, jwt_token_path_for_upload, github_config
             )
             github_upload_status = upload_success
-            # upload_to_github_background sends its own detailed status messages
-            # We just record the final success/failure here
             logger.info(f"{log_prefix} GitHub upload finished. Success: {upload_success}")
-            # The upload function updates the status_msg_obj, so no need to add more here usually.
+            # Update stats with upload status
+            update_process_stats(user_id, schedule_name, 0, 0, 0, upload_success)
         elif jwt_token_path_for_upload:
-            # Tokens generated but no valid GitHub config
-            logger.info(f"{log_prefix} Tokens generated but GitHub not configured or config invalid. Skipping upload.")
-            # Add notification about skipping due to config issue
-            notify_parts.append("ℹ️ GitHub upload skipped (not configured or config invalid). Use /mygithub & /setgithub.")
+            logger.info(f"{log_prefix} Tokens generated but GitHub not configured. Skipping upload.")
+            notify_parts.append("ℹ️ GitHub upload skipped (not configured).")
             await update_schedule_status(bot, status_msg_obj, notify_parts, "Skipped GitHub upload (no config).")
-            github_upload_status = True # Skipped due to config is 'success' for scheduler
-        # else: Upload was already skipped because no tokens were generated
+            github_upload_status = True
 
-
-        # --- 5. Final Notification ---
         final_status_line = "✅ Auto-processing completed."
-        # Only explicitly mention failure if upload was *attempted* but failed
         if jwt_token_path_for_upload and github_config and not github_upload_status:
-             final_status_line = "⚠️ Auto-processing completed, but GitHub upload failed (see details above)."
+             final_status_line = "⚠️ Auto-processing completed, but GitHub upload failed."
 
         await update_schedule_status(bot, status_msg_obj, notify_parts, final_status_line, is_final=True)
-        logger.info(f"{log_prefix} Finished. Overall Success (for scheduler): {github_upload_status or (not jwt_token_path_for_upload)}")
+        logger.info(f"{log_prefix} Finished.")
 
-        # Return True if upload succeeded OR if it was correctly skipped (no tokens or no config)
-        # Return False only if upload was attempted and failed.
         final_success_state = github_upload_status or (not jwt_token_path_for_upload)
 
     except Exception as e:
         logger.error(f"{log_prefix} FAILED: {e}", exc_info=True)
-        final_success_state = False # Mark as failed on any exception during processing
+        final_success_state = False
         try:
-            # Send error notification to user
             error_msg = f"❌ **FAILED:** Auto-processing for schedule `'{escape(user_display_name)}'` encountered an error:\n`{escape(str(e))}`"
-            # Try to edit the status message, otherwise send new
             if status_msg_obj:
                  await update_schedule_status(bot, status_msg_obj, notify_parts, error_msg, is_final=True)
             else:
@@ -3153,7 +3013,6 @@ async def process_single_schedule(bot, user_id: int, schedule_name: str, schedul
             logger.error(f"{log_prefix} Could not notify user about processing failure: {notify_err}")
 
     finally:
-        # Clean up temporary files/directory for this run
         for path in cleanup_paths_auto:
             if os.path.exists(path):
                 try:
@@ -3165,26 +3024,19 @@ async def process_single_schedule(bot, user_id: int, schedule_name: str, schedul
                 except OSError as e:
                     logger.warning(f"{log_prefix} Could not clean up temp path {path}: {e}")
 
-    # Return schedule identifiers and final success status
     return user_id_str, schedule_name, final_success_state
 
 async def update_schedule_status(bot, status_msg_obj, notify_parts: list, new_status: str, keep_last=True, is_final=False):
-    """Helper to update the status message sent to the user during auto-processing."""
-    if not status_msg_obj: return # Cannot update if initial message failed
+    if not status_msg_obj: return
 
     if keep_last and len(notify_parts) > 1:
-        # Replace the last status line if keep_last is True
         notify_parts[-1] = new_status
     else:
-        # Append new status line
         notify_parts.append(new_status)
 
-    # Limit message history for brevity (e.g., keep first line + last 5 status lines)
     max_lines = 7
     if len(notify_parts) > max_lines:
-        # Keep first line (header) and last N lines
         notify_parts = [notify_parts[0]] + notify_parts[-(max_lines-1):]
-        # Add ellipsis if lines were removed between header and tail
         if notify_parts[1] != "...": notify_parts.insert(1, "...")
 
     message_text = "\n".join(notify_parts)
@@ -3193,29 +3045,23 @@ async def update_schedule_status(bot, status_msg_obj, notify_parts: list, new_st
         await bot.edit_message_text(
             chat_id=status_msg_obj.chat_id,
             message_id=status_msg_obj.message_id,
-            text=message_text[:4096], # Ensure text doesn't exceed limit
+            text=message_text[:4096],
             parse_mode=ParseMode.MARKDOWN,
-            # reply_markup=final_markup # <-- REMOVED
         )
     except TelegramError as e:
-        # Ignore "not modified" error, log others
         if "Message is not modified" not in str(e) and "message to edit not found" not in str(e).lower():
             logger.warning(f"AutoProcess: Failed to edit status message {status_msg_obj.message_id}: {e}")
-        # If message not found, maybe user deleted it. Stop trying to edit.
         if "message to edit not found" in str(e).lower():
             logger.warning(f"AutoProcess: Status message {status_msg_obj.message_id} was deleted by user? Stopping updates.")
-            status_msg_obj = None # Prevent further edits
-
+            status_msg_obj = None
 
 # --- Main Application Setup ---
 
 async def main() -> None:
-    """Initialize data, set up handlers, start scheduler, and run the bot."""
     global ADMIN_ID, TOKEN
 
     print("\n--- Initializing Bot ---")
 
-    # --- Essential Config Checks ---
     if not TOKEN or TOKEN == "YOUR_FALLBACK_BOT_TOKEN":
         print("\n" + "="*60)
         print(" FATAL ERROR: TELEGRAM_BOT_TOKEN is missing or invalid.")
@@ -3230,7 +3076,6 @@ async def main() -> None:
         print(" -> Exiting.")
         print("="*60 + "\n")
         exit(1)
-
 
     try:
         admin_id_env = os.getenv('ADMIN_ID')
@@ -3251,11 +3096,10 @@ async def main() -> None:
     else: logger.info(f"Using API Base URL: {API_BASE_URL}")
     if not API_KEY or API_KEY == 'atxdev': logger.warning("JWT_API_KEY not set or using default.")
 
-    # --- Create Directories ---
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
         os.makedirs(TEMP_DIR, exist_ok=True)
-        os.makedirs(SCHEDULED_FILES_DATA_DIR, exist_ok=True) # Create schedule data dir
+        os.makedirs(SCHEDULED_FILES_DATA_DIR, exist_ok=True)
         logger.info(f"Data Directory: {DATA_DIR}")
         logger.info(f"Temp Directory: {TEMP_DIR}")
         logger.info(f"Scheduled Files Storage: {SCHEDULED_FILES_DATA_DIR}")
@@ -3263,8 +3107,6 @@ async def main() -> None:
         print(f"\nFATAL ERROR: Cannot create required directories: {e}\n-> Exiting.")
         exit(1)
 
-    # --- Build Application ---
-    # Configure connection pool size and timeouts
     app_builder = Application.builder().token(TOKEN)\
         .concurrent_updates(True) \
         .read_timeout(30) \
@@ -3276,47 +3118,49 @@ async def main() -> None:
 
     application = app_builder.build()
 
-    # --- Handlers ---
     private_chat_filter = filters.ChatType.PRIVATE
 
     # Core Commands & Buttons
     application.add_handler(CommandHandler("start", start, filters=private_chat_filter))
     application.add_handler(CommandHandler("help", help_command, filters=private_chat_filter))
-    application.add_handler(MessageHandler(filters.Regex(f"^{re.escape(COMMAND_BUTTONS_LAYOUT[2][1])}$") & private_chat_filter, help_command)) # Help Button
+    application.add_handler(MessageHandler(filters.Regex(f"^{re.escape(COMMAND_BUTTONS_LAYOUT[2][1])}$") & private_chat_filter, help_command))
 
     # VIP Info Commands & Buttons
     application.add_handler(CommandHandler("vipstatus", vip_status_command, filters=private_chat_filter))
-    application.add_handler(MessageHandler(filters.Regex(f"^{re.escape(COMMAND_BUTTONS_LAYOUT[0][1])}$") & private_chat_filter, vip_status_command)) # Vip Status Button
+    application.add_handler(MessageHandler(filters.Regex(f"^{re.escape(COMMAND_BUTTONS_LAYOUT[0][1])}$") & private_chat_filter, vip_status_command))
     application.add_handler(CommandHandler("vipshop", vip_shop_command, filters=private_chat_filter))
-    application.add_handler(MessageHandler(filters.Regex(f"^{re.escape(COMMAND_BUTTONS_LAYOUT[1][0])}$") & private_chat_filter, vip_shop_command)) # Vip Shop Button
+    application.add_handler(MessageHandler(filters.Regex(f"^{re.escape(COMMAND_BUTTONS_LAYOUT[1][0])}$") & private_chat_filter, vip_shop_command))
 
-    # GitHub Config Commands & Button (VIP)
+    # Statistics Command & Button (NEW)
+    application.add_handler(CommandHandler("stats", stats_command, filters=private_chat_filter))
+    application.add_handler(MessageHandler(filters.Regex(f"^{re.escape(COMMAND_BUTTONS_LAYOUT[3][0])}$") & private_chat_filter, stats_command))
+
+    # GitHub Config Commands & Button
     application.add_handler(CommandHandler("setgithub", set_github_direct, filters=private_chat_filter))
     application.add_handler(CommandHandler("mygithub", my_github_config, filters=private_chat_filter))
-    application.add_handler(MessageHandler(filters.Regex(f"^{re.escape(COMMAND_BUTTONS_LAYOUT[1][1])}$") & private_chat_filter, my_github_config)) # GitHub Status Button
+    application.add_handler(MessageHandler(filters.Regex(f"^{re.escape(COMMAND_BUTTONS_LAYOUT[1][1])}$") & private_chat_filter, my_github_config))
 
-    # Scheduled File Commands & Button (VIP)
+    # Scheduled File Commands & Button
     application.add_handler(CommandHandler("setfile", set_scheduled_file_start, filters=private_chat_filter))
     application.add_handler(CommandHandler("removefile", remove_scheduled_file, filters=private_chat_filter))
     application.add_handler(CommandHandler("scheduledfiles", list_scheduled_files, filters=private_chat_filter))
-    application.add_handler(MessageHandler(filters.Regex(f"^{re.escape(COMMAND_BUTTONS_LAYOUT[2][0])}$") & private_chat_filter, list_scheduled_files)) # Scheduled Files Button
+    application.add_handler(MessageHandler(filters.Regex(f"^{re.escape(COMMAND_BUTTONS_LAYOUT[2][0])}$") & private_chat_filter, list_scheduled_files))
 
-    # Manual File Processing (handles button click AND direct file send)
-    # IMPORTANT: This handler now ALSO catches files sent for scheduling.
-    # The `handle_document` function itself routes based on `context.user_data['pending_schedule']`.
-    application.add_handler(MessageHandler(filters.Text(COMMAND_BUTTONS_LAYOUT[0][0]) & private_chat_filter, handle_document)) # Process File Button
+    # Manual File Processing (handles JSON and TXT)
+    application.add_handler(MessageHandler(filters.Text(COMMAND_BUTTONS_LAYOUT[0][0]) & private_chat_filter, handle_document))
     application.add_handler(MessageHandler(
-        # Match application/json OR filename ending .json (case insensitive)
-        (filters.Document.MimeType('application/json') | filters.Document.FileExtension('json')) & private_chat_filter,
-        handle_document # Catches both manual sends and sends after /setfile
+        (filters.Document.MimeType('application/json') | 
+         filters.Document.FileExtension('json') |
+         filters.Document.MimeType('text/plain') |
+         filters.Document.FileExtension('txt')) & private_chat_filter,
+        handle_document
     ))
 
     # Cancel Command & Button
     application.add_handler(CommandHandler("cancel", cancel, filters=private_chat_filter))
-    application.add_handler(MessageHandler(filters.Regex(f"^{re.escape(COMMAND_BUTTONS_LAYOUT[3][0])}$") & private_chat_filter, cancel)) # Cancel Button
+    application.add_handler(MessageHandler(filters.Regex(f"^{re.escape(COMMAND_BUTTONS_LAYOUT[3][1])}$") & private_chat_filter, cancel))
 
-
-    # Admin Commands (only add if ADMIN_ID is valid)
+    # Admin Commands
     if ADMIN_ID and ADMIN_ID != 0:
         admin_filter = filters.User(user_id=ADMIN_ID) & private_chat_filter
         application.add_handler(CommandHandler("vip", vip_management, filters=admin_filter))
@@ -3325,56 +3169,50 @@ async def main() -> None:
     else:
          logger.warning("Admin commands are disabled as ADMIN_ID is not set, 0, or invalid.")
 
-    # Message Forwarding to Admin (if configured)
+    # Message Forwarding to Admin
     if ADMIN_ID and ADMIN_ID != 0:
-        # Define filters for messages that should be forwarded
         known_button_texts_set = {btn for row in COMMAND_BUTTONS_LAYOUT for btn in row}
-        # Exclude commands, known buttons, JSON documents (handled by handle_document), and messages from admin
-        # Also explicitly exclude messages handled by other handlers if needed
         forwarding_filters = (
             private_chat_filter &
             ~filters.User(user_id=ADMIN_ID) &
             ~filters.COMMAND &
             ~filters.Text(known_button_texts_set) &
-            ~(filters.Document.MimeType('application/json') | filters.Document.FileExtension('json')) &
-            (filters.TEXT | filters.PHOTO | filters.Sticker.ALL | filters.VIDEO | filters.VIDEO_NOTE | filters.VOICE | filters.AUDIO | filters.Document.ALL) & # Forward various message types
-            ~filters.UpdateType.EDITED_MESSAGE # Don't forward edits
+            ~(filters.Document.MimeType('application/json') | 
+              filters.Document.FileExtension('json') |
+              filters.Document.MimeType('text/plain') |
+              filters.Document.FileExtension('txt')) &
+            (filters.TEXT | filters.PHOTO | filters.Sticker.ALL | filters.VIDEO | filters.VIDEO_NOTE | filters.VOICE | filters.AUDIO | filters.Document.ALL) &
+            ~filters.UpdateType.EDITED_MESSAGE
         )
         application.add_handler(MessageHandler(forwarding_filters, forward_to_admin))
         logger.info("Message forwarding to admin enabled.")
     else:
         logger.warning("Message forwarding to admin is disabled as ADMIN_ID is not set or invalid.")
 
-    # Error Handler (must be last handler)
     application.add_error_handler(error_handler)
 
     logger.info("🤖 Bot is initializing and connecting to Telegram...")
     print("\n" + "="*60)
-    print(" 🚀 Advanced JWT Token Bot with File Scheduling is starting...")
+    print(" 🚀 Advanced JWT Token Bot with TXT Support & Statistics is starting...")
 
     try:
-        # Initialize application (connects, gets bot info etc.)
         await application.initialize()
 
         bot_info = await application.bot.get_me()
         print(f" ✔️ Bot Username: @{bot_info.username} (ID: {bot_info.id})")
-        print(f" ✔️ Admin ID: {ADMIN_ID if (ADMIN_ID and ADMIN_ID != 0) else 'Not Set (Admin Features Disabled)'}")
+        print(f" ✔️ Admin ID: {ADMIN_ID if (ADMIN_ID and ADMIN_ID != 0) else 'Not Set'}")
         print(f" ✔️ Data Directory: {DATA_DIR}")
         print(f" ✔️ Scheduled File Check Interval: {AUTO_PROCESS_CHECK_INTERVAL}s")
+        print(f" ✔️ Auto-Processing Interval: 7 hours (420 minutes)")
 
-        # Start the background scheduler task only AFTER application is initialized
-        # Pass the application object so the task can access application.bot etc.
         scheduler_task = asyncio.create_task(run_scheduled_file_processor(application))
         logger.info("Background scheduler task created.")
 
-        # Start polling for updates from Telegram
         await application.start()
         await application.updater.start_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
         print("\n Bot is now polling for updates. Press Ctrl+C to stop.")
         print("="*60 + "\n")
 
-        # Keep the main thread alive (polling runs in background)
-        # Wait for the scheduler task to finish (it won't normally, unless cancelled)
         await scheduler_task
 
     except (TelegramError, ConnectionError) as e:
@@ -3388,7 +3226,6 @@ async def main() -> None:
          exit(1)
     except asyncio.CancelledError:
         logger.info("Main task or scheduler was cancelled.")
-        # Shutdown should happen in finally block
     except Exception as e:
         print("\n" + "="*60)
         print(f" FATAL ERROR: An unexpected error occurred during bot startup or main loop.")
@@ -3398,7 +3235,6 @@ async def main() -> None:
         logger.critical(f"Unhandled exception during startup/runtime: {e}", exc_info=True)
         exit(1)
     finally:
-         # Attempt graceful shutdown on any exit path (normal or error)
          if 'application' in locals() and application.running:
               logger.info("Attempting graceful shutdown...")
               await application.stop()
@@ -3408,17 +3244,15 @@ async def main() -> None:
               logger.info("Cancelling scheduler task...")
               scheduler_task.cancel()
               try:
-                   await scheduler_task # Allow cancellation to propagate
+                   await scheduler_task
               except asyncio.CancelledError:
                    logger.info("Scheduler task cancelled successfully.")
               except Exception as task_err:
                   logger.error(f"Error during scheduler task cancellation/await: {task_err}")
          logger.info("Shutdown complete.")
 
-
 if __name__ == '__main__':
     try:
-        # Ensure TOKEN has a valid value before running
         if not TOKEN or TOKEN == "YOUR_FALLBACK_BOT_TOKEN":
              print("FATAL: TELEGRAM_BOT_TOKEN is not set. Please configure it before running.")
         else:
@@ -3429,122 +3263,3 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"\n💥 A critical unhandled exception occurred outside the main asyncio loop: {e}")
         logger.critical(f"Critical unhandled exception in __main__: {e}", exc_info=True)
-
-
-
-# ===================== FINAL MULTI-GITHUB + ADMIN EXTENSION =====================
-# This section ONLY ADDS features. Original logic remains untouched.
-
-# -------- GitHub config load/save --------
-def load_github_configs():
-    # { user_id: [ {name, github_token, github_repo, github_branch, github_filename, last_upload} ] }
-    return load_json_data(GITHUB_CONFIG_FILE, {})
-
-def save_github_configs(data: dict):
-    return save_json_data(GITHUB_CONFIG_FILE, data)
-
-
-# -------- UPDATED /setgithub --------
-# SAME NAME  -> overwrite
-# NEW NAME   -> add (multiple allowed)
-async def set_github_direct(update: Update, context: CallbackContext) -> None:
-    user = update.effective_user
-    if not user:
-        return
-
-    if not is_user_vip(user.id):
-        await update.message.reply_text("❌ This command is VIP only.")
-        return
-
-    args = context.args
-    if len(args) != 5:
-        await update.message.reply_text(
-            "Usage:\n/setgithub <name> <token> <owner/repo> <branch> <file.json>"
-        )
-        return
-
-    name, token, repo, branch, filename = args
-    uid = str(user.id)
-
-    data = load_github_configs()
-    configs = data.setdefault(uid, [])
-
-    new_cfg = {
-        "name": name,
-        "github_token": token,
-        "github_repo": repo,
-        "github_branch": branch,
-        "github_filename": filename,
-        "last_upload": None
-    }
-
-    for cfg in configs:
-        if cfg["name"] == name:
-            cfg.update(new_cfg)   # overwrite ONLY same name
-            save_github_configs(data)
-            await update.message.reply_text(f"♻️ GitHub config '{name}' updated.")
-            return
-
-    configs.append(new_cfg)       # add new
-    save_github_configs(data)
-    await update.message.reply_text(f"✅ GitHub config '{name}' added.")
-
-
-# -------- LIST USER GITHUB FILES --------
-async def mygithub(update: Update, context: CallbackContext):
-    uid = str(update.effective_user.id)
-    data = load_github_configs()
-    cfgs = data.get(uid, [])
-
-    if not cfgs:
-        await update.message.reply_text("ℹ️ No GitHub files configured.")
-        return
-
-    text = "🔗 *Your GitHub Files*\n\n"
-    for i, c in enumerate(cfgs, 1):
-        text += f"{i}. `{c['name']}` → {c['github_repo']} / {c['github_filename']}\n"
-
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
-
-
-# -------- MULTI UPLOAD (used by existing process logic) --------
-async def upload_all_github(bot, user_id, jwt_file):
-    data = load_github_configs()
-    cfgs = data.get(str(user_id), [])
-    for cfg in cfgs:
-        await upload_to_github_background(bot, user_id, jwt_file, cfg)
-
-
-# ===================== STICKY MENU =====================
-MAIN_MENU = ReplyKeyboardMarkup(
-    [
-        ["📤 Process File", "⏰ Set File"],
-        ["🔗 My GitHub", "💎 VIP Status"],
-        ["👑 Admin Panel"]
-    ],
-    resize_keyboard=True
-)
-
-
-async def show_menu(update: Update, context: CallbackContext):
-    await update.message.reply_text("📌 Menu Active", reply_markup=MAIN_MENU)
-
-
-# ===================== ADMIN PANEL =====================
-ADMIN_MENU = ReplyKeyboardMarkup(
-    [
-        ["➕ Add VIP", "➖ Remove VIP"],
-        ["📊 All Users", "🔗 All GitHub Sets"],
-        ["⬅ Back"]
-    ],
-    resize_keyboard=True
-)
-
-
-async def admin_panel(update: Update, context: CallbackContext):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    await update.message.reply_text(
-        "👑 ADMIN CONTROL PANEL",
-        reply_markup=ADMIN_MENU
-    )
