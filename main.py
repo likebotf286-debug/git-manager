@@ -44,7 +44,7 @@ MAX_FILE_SIZE = int(os.getenv('MAX_FILE_SIZE', 5 * 1024 * 1024))
 ADMIN_ID = int(os.getenv('ADMIN_ID', 6417430059))
 if ADMIN_ID == 6417430059:
     print("WARNING: ADMIN_ID environment variable is not set, invalid, or 0.")
-MAX_CONCURRENT_REQUESTS = int(os.getenv('MAX_CONCURRENT_REQUESTS', 8))
+MAX_CONCURRENT_REQUESTS = int(os.getenv('MAX_CONCURRENT_REQUESTS', 15))
 ADMIN_CONTACT_LINK = os.getenv('ADMIN_CONTACT_LINK', 'https://t.me/Frexy1only')
 AUTO_PROCESS_CHECK_INTERVAL = int(os.getenv('AUTO_PROCESS_CHECK_INTERVAL', 120))
 
